@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ショート構成分析</title>
+<!--CSS-->
+</head>
+<body>
+<header class="topbar">
+  <div class="brand"><span class="brand-mark">▮▮▯</span>ショート構成分析</div>
+  <nav>
+    <button data-tab="list" class="active">一覧</button>
+    <button data-tab="edit">編集</button>
+    <button data-tab="templates">型</button>
+    <button data-tab="analyze">分析</button>
+  </nav>
+  <button id="btn-settings" class="icon-btn" title="バックアップ">⚙ バックアップ</button>
+</header>
+
+<div id="settings-panel" class="panel hidden">
+  <h3>バックアップ</h3>
+  <p class="hint">スクショも含めて全データを1つのファイルに保存します。</p>
+  <div class="row">
+    <button id="export" class="btn primary">書き出し</button>
+    <button id="import-add" class="btn">読み込み（今のデータに追加）</button>
+    <button id="import-replace" class="btn danger-outline">読み込み（置き換え）</button>
+  </div>
+  <input type="file" id="import-file" accept=".json,application/json" hidden>
+</div>
+
+<main>
+  <section id="tab-list" class="tab"></section>
+  <section id="tab-edit" class="tab hidden"></section>
+  <section id="tab-templates" class="tab hidden"></section>
+  <section id="tab-analyze" class="tab hidden"></section>
+</main>
+
+<div id="overlay" class="overlay hidden"></div>
+<div id="toasts"></div>
+<!--JS-->
+</body>
+</html>
