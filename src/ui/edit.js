@@ -240,9 +240,9 @@ function timeBar() {
   function setT(v) { setCurT(v, false); }
   var ti = h('input', { type: 'number', id: 'cur-t', step: '0.1', min: '0', value: EditUI.curT, oninput: function (e) { EditUI.curT = Number(e.target.value) || 0; },
     onchange: function (e) { setCurT(Number(e.target.value) || 0, false); } });
-  function nudge(d) { return h('button', { class: 'btn small', onclick: function () { setT((Number(EditUI.curT) || 0) + d); } }, (d > 0 ? '+' : '') + d); }
+  function nudge(d) { return h('button', { class: 'btn small' + (Math.abs(d) === 1 ? ' wide-only' : ''), onclick: function () { setT((Number(EditUI.curT) || 0) + d); } }, (d > 0 ? '+' : '') + d); }
   return h('div', { class: 'timebar' },
-    h('span', { class: 'lbl', text: '今の秒数' }), ti, h('span', { class: 'lbl', text: '秒' }),
+    h('span', { class: 'lbl wide-only', text: '今の秒数' }), ti, h('span', { class: 'lbl', text: '秒' }),
     nudge(-1), nudge(-0.5), nudge(0.5), nudge(1),
     h('span', { class: 'spacer' }),
     h('button', { class: 'btn primary', id: 'add-cut', title: '今の秒数でカットを追加', onclick: function () {
@@ -269,8 +269,7 @@ function renderEdit(el) {
   if (window.playerBox) left.appendChild(playerBox());
   left.appendChild(infoBox());
 
-  var right = h('div');
-  right.appendChild(timeBar());
+  var right = h('div', { class: 'edit-main' });
   right.appendChild(blocksBox());
   if (window.shotsBox) right.appendChild(shotsBox());
   right.appendChild(rowsBox({
@@ -385,7 +384,7 @@ function playerBox() {
   var S = EditUI.draft;
   var p = playerUrl(S.url);
   var canShare = !!(navigator.mediaDevices && navigator.mediaDevices.getDisplayMedia);
-  var box = h('div', { class: 'box player-box' }, h('h3', null, '動画を見る・撮る'));
+  var box = h('div', { class: 'box player-box' }, h('h3', { class: 'player-title' }, '動画を見る・撮る'));
   if (p && p.site !== 'other') {
     var frame = h('div', { id: 'player-frame', class: 'player-frame', 'data-site': p.site });
     box.appendChild(frame);
@@ -395,6 +394,7 @@ function playerBox() {
     destroyPlayer();
     box.appendChild(h('p', { class: 'hint', text: S.url ? 'このURLはツール内で再生できません（YouTube・TikTok・Instagramに対応）' : '基本情報にURLを貼ると、ここで再生できます' }));
   }
+  box.appendChild(timeBar());
   if (S.url && p) box.appendChild(h('a', { id: 'player-fallback', class: 'hint', href: /^https?:/i.test(S.url) ? S.url : 'https://' + S.url, target: '_blank', rel: 'noopener', text: '元のページで開く ↗' }));
   var fileIn = h('input', { type: 'file', accept: 'image/*', multiple: true, hidden: true, onchange: function () { addImageFiles(fileIn.files); fileIn.value = ''; } });
   box.appendChild(h('div', { class: 'row', style: { marginTop: '10px' } },

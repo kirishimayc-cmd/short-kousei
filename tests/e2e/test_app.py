@@ -349,3 +349,25 @@ def test_paste_image(page):
         dt.items.add(new File([b], 'p.png', {type:'image/png'}));
         document.dispatchEvent(new ClipboardEvent('paste', {clipboardData: dt})); r(); })); }""")
     page.wait_for_selector('.shot img')
+
+
+def _in_view(page, sel):
+    return page.evaluate("""s => { const r = document.querySelector(s).getBoundingClientRect();
+        return r.top >= 0 && r.bottom <= innerHeight && r.height > 0; }""", sel)
+
+
+def test_mobile_video_and_cut_button_stay_visible(browser):
+    ctx = browser.new_context(viewport={'width': 390, 'height': 844}, is_mobile=True, has_touch=True)
+    pg = ctx.new_page(); pg.set_default_timeout(5000)
+    pg.goto((__import__('pathlib').Path(__file__).resolve().parents[2] / 'dist' / 'short-kousei.html').as_uri())
+    pg.wait_for_function('window.App && App.ready')
+    pg.evaluate("""()=>{const s=newShort('research');s.url='https://youtu.be/abcDEF12_-x';s.duration=30;
+        s.cuts=[...Array(30)].map((_,i)=>({t:i}));return App.save(s).then(n=>App.go('edit',n.id))}""")
+    pg.wait_for_selector('#player-frame')
+    for y in [0, 600, 1500, 4000]:
+        pg.evaluate(f'window.scrollTo(0,{y})'); pg.wait_for_timeout(100)
+        assert _in_view(pg, '#player-frame'), y
+        assert _in_view(pg, '#add-cut'), y
+    pg.tap('#add-cut')
+    assert pg.inner_text('#cut-count') == '31'
+    ctx.close()

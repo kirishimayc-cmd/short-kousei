@@ -88,7 +88,7 @@ textarea { width: 100%; resize: vertical; min-height: 54px; }
 .field input, .field select { width: 100%; }
 .fields2 { display: grid; grid-template-columns: 1fr 1fr; gap: 0 10px; }
 .fields3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 0 8px; }
-.timebar { display: flex; align-items: center; gap: 8px; background: var(--ink); color: #fff; border-radius: 9px; padding: 8px 10px; margin-bottom: 12px; }
+.timebar { display: flex; align-items: center; gap: 6px; background: var(--ink); color: #fff; border-radius: 9px; padding: 8px 10px; margin: 0 0 10px; flex-wrap: wrap; }
 .timebar input { width: 76px; background: #2c2f36; border-color: #444; color: #fff; font-weight: 700; text-align: right; }
 .timebar .lbl { font-size: 12px; color: #b9bdc6; }
 .timebar .btn { background: #2c2f36; border-color: #444; color: #fff; }
@@ -179,7 +179,18 @@ table.grid tr:hover td { background: #fbf9f5; }
   main { padding: 14px 10px 80px; }
   .player-frame { max-height: 62vh; }
   table.rows { display: block; overflow-x: auto; }
-  .timebar { flex-wrap: wrap; position: sticky; top: 54px; z-index: 10; }
+  /* スマホ：動画とカットボタンを上に固定して、下の内容だけスクロール */
+  .topbar { position: static; }
+  .sticky-col { display: contents; }
+  .player-box { position: sticky; top: 0; z-index: 15; margin: 0 -10px 12px; border-radius: 0; border-left: 0; border-right: 0; padding: 6px 8px 4px; box-shadow: 0 4px 12px rgba(0,0,0,.12); }
+  .player-box .player-title, .player-box > .hint { display: none; }
+  .player-frame { width: auto; height: 34vh; max-height: none; margin-bottom: 6px; }
+  .player-box .share-state { font-size: 11px; }
+  .player-box .row { margin: 4px 0 2px; }
+  .timebar { flex-wrap: nowrap; margin: 0 0 4px; padding: 6px 8px; }
+  .timebar input { width: 64px; }
+  .timebar .btn.primary { padding: 9px 14px; font-size: 15px; }
+  .wide-only { display: none; }
   .edit-grid { grid-template-columns: 1fr; }
   .sticky-col { position: static; }
   .cmp-row { grid-template-columns: 1fr 70px; }
