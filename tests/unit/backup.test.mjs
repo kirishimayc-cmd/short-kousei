@@ -24,3 +24,14 @@ test('other app rejected', () => {
   assert.equal(B.validateImport('{"app":"other"}').ok, false);
   assert.equal(B.validateImport('{"app":"short-kousei","shorts":{}}').ok, false);
 });
+
+test('validateImport assigns ids to records missing them', () => {
+  const r = B.validateImport(JSON.stringify({ app: 'short-kousei', shorts: [{ title: 'a' }, { id: null }], templates: [{ name: 'x' }] }));
+  assert.equal(r.ok, true);
+  for (const x of [...r.data.shorts, ...r.data.templates]) assert.equal(typeof x.id, 'string');
+  assert.ok(r.data.shorts[0].id.length > 0);
+});
+
+test('validateImport rejects non-object entries', () => {
+  assert.equal(B.validateImport(JSON.stringify({ app: 'short-kousei', shorts: [1], templates: [] })).ok, false);
+});

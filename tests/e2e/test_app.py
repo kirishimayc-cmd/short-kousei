@@ -245,3 +245,73 @@ def test_analyze_table(page):
     assert '尺あり' in first and '80%' in first and '10' in first
     assert '—' in rows.nth(1).inner_text()
     assert page.locator('#tab-analyze .cmp-row').count() == 2
+
+
+# ---------- Final review fixes ----------
+def import_json(page, tmp_path, obj, mode):
+    f = tmp_path / ('imp-%s.json' % mode)
+    f.write_text(json.dumps(obj, ensure_ascii=False), encoding='utf-8')
+    if not page.is_visible('#settings-panel'):
+        page.click('#btn-settings')
+    page.once('dialog', lambda d: d.accept())
+    with page.expect_file_chooser() as fc:
+        page.click('#import-' + mode)
+    fc.value.set_files(str(f))
+
+
+def test_replace_import_bad_records_keeps_data(page, tmp_path):
+    page.evaluate("App.save(newShort('research'))")
+    page.wait_for_timeout(200)
+    import_json(page, tmp_path, {'app': 'short-kousei', 'shorts': [{'id': 'ok1', 'title': 'x'}],
+                                 'templates': [{'name': 'no id'}], 'blockTypes': []}, 'replace')
+    page.wait_for_timeout(500)
+    reload(page)
+    # 不完全なレコードは id を補って読み込まれ、データが消えることはない
+    assert page.evaluate('App.state.templates.length') == 1
+    assert page.evaluate('App.state.shorts.length') == 1
+
+
+def test_db_error_during_import_rolls_back(page, tmp_path):
+    orig = page.evaluate("App.save(newShort('research')).then(n=>n.id)")
+    page.wait_for_timeout(200)
+    page.evaluate("App.importData({shorts:[{id:'a',title:'a'}], templates:[{id:{bad:1}}], blockTypes:null}, 'replace').catch(e=>window.__impErr=String(e))")
+    page.wait_for_function('window.__impErr')
+    reload(page)
+    assert page.evaluate('App.state.shorts.map(s=>s.id)') == [orig]
+
+
+def test_add_import_keeps_newer_local(page, tmp_path):
+    page.evaluate("(()=>{const s=newShort('research'); s.id='same'; s.title='NEW'; return App.save(s)})()")
+    page.wait_for_timeout(200)
+    import_json(page, tmp_path, {'app': 'short-kousei', 'templates': [],
+                                 'shorts': [{'id': 'same', 'title': 'OLD', 'updatedAt': 1}]}, 'add')
+    page.wait_for_selector('.toast:not(.error)')
+    reload(page)
+    assert page.evaluate("App.find('same').title") == 'NEW'
+
+
+def test_save_failure_shows_error(page):
+    open_new(page)
+    page.evaluate("() => { window.put = () => Promise.reject(new Error('QuotaExceededError')); }")
+    page.fill('#f-title', 'x')
+    page.wait_for_selector('.toast.error')
+    assert '保存' in page.inner_text('.toast.error')
+
+
+def test_import_on_edit_tab_not_overwritten(page, tmp_path):
+    sid = open_new(page, title='古い')
+    page.fill('#f-channel', 'typing')   # 保存待ちの状態を作る
+    import_json(page, tmp_path, {'app': 'short-kousei', 'templates': [],
+                                 'shorts': [{'id': sid, 'title': 'IMPORTED', 'updatedAt': 9e15}]}, 'add')
+    page.wait_for_selector('.toast:not(.error)')
+    page.wait_for_timeout(900)
+    assert page.evaluate(f"App.find('{sid}').title") == 'IMPORTED'
+    assert page.input_value('#f-title') == 'IMPORTED'
+
+
+def test_flush_on_pagehide(page):
+    sid = open_new(page)
+    page.fill('#f-title', '閉じる直前')
+    page.evaluate("window.dispatchEvent(new Event('pagehide'))")
+    page.wait_for_timeout(150)   # デバウンス(500ms)より前
+    assert page.evaluate("new Promise(r=>{const q=indexedDB.open('short-kousei');q.onsuccess=()=>{const g=q.result.transaction('shorts').objectStore('shorts').get('%s');g.onsuccess=()=>r(g.result.title)}})" % sid) == '閉じる直前'

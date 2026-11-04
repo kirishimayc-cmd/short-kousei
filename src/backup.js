@@ -17,6 +17,13 @@ function validateImport(text) {
   if (!Array.isArray(o.shorts) || !Array.isArray(o.templates)) {
     return { ok: false, error: 'バックアップの中身が足りません（shorts / templates が見つかりません）' };
   }
+  var all = o.shorts.concat(o.templates);
+  if (all.some(function (x) { return !x || typeof x !== 'object' || Array.isArray(x); })) {
+    return { ok: false, error: 'バックアップの中身が壊れています（不正なデータが含まれています）' };
+  }
+  all.forEach(function (x) {
+    if (typeof x.id !== 'string' || !x.id) x.id = Date.now().toString(36) + Math.random().toString(36).slice(2, 10);
+  });
   return { ok: true, data: { shorts: o.shorts, templates: o.templates, blockTypes: Array.isArray(o.blockTypes) ? o.blockTypes : null } };
 }
 

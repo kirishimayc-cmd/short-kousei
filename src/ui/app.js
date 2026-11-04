@@ -64,7 +64,10 @@ var App = {
     n.updatedAt = Date.now();
     var arr = this.state.shorts, i = arr.findIndex(function (x) { return x.id === n.id; });
     if (i >= 0) arr[i] = n; else arr.push(n);
-    return put('shorts', n).then(function () { return n; });
+    return put('shorts', n).then(function () { return n; }, function (e) {
+      toast('保存できませんでした（' + (e && (e.name || e.message)) + '）。容量不足の場合はスクショを減らすか、バックアップを書き出してください', true);
+      throw e;
+    });
   },
 
   saveTemplate: function (t) {
@@ -129,29 +132,45 @@ var App = {
           toast((mode === 'replace' ? '置き換えました' : '追加しました') + '（ショート' + r.data.shorts.length + '件・型' + r.data.templates.length + '件）');
           self.render();
         });
-      }).catch(function (e) { toast('読み込みに失敗しました: ' + e.message, true); });
+      }).catch(function (e) { toast('読み込みに失敗しました（データは変更していません）: ' + (e && e.message), true); self.render(); });
     });
   },
 
   importData: function (data, mode) {
     var self = this;
     var shorts = data.shorts.map(normalizeShort), templates = data.templates;
+    var local = {};
+    self.state.shorts.forEach(function (s) { local[s.id] = s; });
+    if (mode === 'add') {
+      // 同じIDで手元の方が新しいものは上書きしない
+      shorts = shorts.filter(function (s) { var l = local[s.id]; return !l || (Number(s.updatedAt) || 0) > (Number(l.updatedAt) || 0); });
+    }
+    var blockTypes = null;
+    if (data.blockTypes && data.blockTypes.length) {
+      if (mode === 'replace') blockTypes = data.blockTypes;
+      else {
+        var names = self.state.blockTypes.map(function (b) { return b.name; });
+        blockTypes = self.state.blockTypes.concat(data.blockTypes.filter(function (b) { return b && names.indexOf(b.name) < 0; }));
+      }
+    }
+    if (window.editDiscardDraft) editDiscardDraft();
     return openDB().then(function (db) {
       return new Promise(function (res, rej) {
         var t = db.transaction(['shorts', 'templates', 'settings'], 'readwrite');
-        if (mode === 'replace') ['shorts', 'templates', 'settings'].forEach(function (n) { t.objectStore(n).clear(); });
-        shorts.forEach(function (s) { t.objectStore('shorts').put(s); });
-        templates.forEach(function (x) { t.objectStore('templates').put(x); });
-        if (data.blockTypes && (mode === 'replace' || !self.state.blockTypes.length)) t.objectStore('settings').put({ id: 'blockTypes', list: data.blockTypes });
-        else if (data.blockTypes) {
-          var names = self.state.blockTypes.map(function (b) { return b.name; });
-          var merged = self.state.blockTypes.concat(data.blockTypes.filter(function (b) { return names.indexOf(b.name) < 0; }));
-          t.objectStore('settings').put({ id: 'blockTypes', list: merged });
+        t.oncomplete = function () { res(); };
+        t.onerror = function (e) { e.preventDefault(); };
+        t.onabort = function () { rej(t.error || new Error('読み込みを取り消しました')); };
+        try {
+          if (mode === 'replace') ['shorts', 'templates', 'settings'].forEach(function (n) { t.objectStore(n).clear(); });
+          shorts.forEach(function (s) { t.objectStore('shorts').put(s); });
+          templates.forEach(function (x) { t.objectStore('templates').put(x); });
+          if (blockTypes) t.objectStore('settings').put({ id: 'blockTypes', list: blockTypes });
+        } catch (e) {
+          try { t.abort(); } catch (e2) { /* already finished */ }
+          rej(e);
         }
-        t.oncomplete = res;
-        t.onerror = function () { rej(t.error); };
       });
-    }).then(function () { return self.load(); });
+    }).then(function () { return self.load(); }, function (e) { return self.load().then(function () { throw e; }); });
   }
 };
 window.App = App;

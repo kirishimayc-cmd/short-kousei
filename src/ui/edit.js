@@ -13,10 +13,15 @@ function editScheduleSave() {
 }
 function editSaveNow() {
   clearTimeout(EditUI.saveTimer);
+  EditUI.saveTimer = null;
   if (!EditUI.draft || !App.find(EditUI.draft.id)) return Promise.resolve();
-  return App.save(EditUI.draft);
+  return App.save(EditUI.draft).catch(function () {});
 }
-window.addEventListener('beforeunload', function () { if (EditUI.draft) editSaveNow(); });
+function editDiscardDraft() { clearTimeout(EditUI.saveTimer); EditUI.draft = null; }
+function editFlushIfPending() { if (EditUI.draft && EditUI.saveTimer) editSaveNow(); }
+window.addEventListener('beforeunload', editFlushIfPending);
+window.addEventListener('pagehide', editFlushIfPending);
+document.addEventListener('visibilitychange', function () { if (document.visibilityState === 'hidden') editFlushIfPending(); });
 
 function editRefreshDerived() {
   var s = normalizeShort(EditUI.draft);
