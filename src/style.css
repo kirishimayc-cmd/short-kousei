@@ -105,6 +105,9 @@ table.rows td { padding: 4px 4px; border-bottom: 1px solid #f0ede6; vertical-ali
 table.rows input, table.rows select { width: 100%; padding: 4px 6px; }
 table.rows input.t { width: 64px; text-align: right; }
 table.rows td.x { width: 28px; }
+.cut-thumb { width: 30px; height: 44px; object-fit: cover; border-radius: 4px; cursor: zoom-in; display: block; }
+td.thumb-cell { width: 36px; }
+.cut-shot-toggle { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; color: #ddd; white-space: nowrap; cursor: pointer; }
 .xbtn { border: 0; background: none; color: var(--ink3); cursor: pointer; font-size: 16px; line-height: 1; padding: 4px; }
 .xbtn:hover { color: var(--danger); }
 .addrow { margin-top: 8px; }

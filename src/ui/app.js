@@ -35,7 +35,7 @@ var App = {
   ready: false,
   tab: 'list',
   currentId: null,
-  state: { shorts: [], templates: [], blockTypes: DEFAULT_BLOCK_TYPES.slice() },
+  state: { shorts: [], templates: [], blockTypes: DEFAULT_BLOCK_TYPES.slice(), prefs: {} },
 
   init: function () {
     var self = this;
@@ -54,6 +54,8 @@ var App = {
       st.templates = r[1];
       var bt = r[2].filter(function (x) { return x.id === 'blockTypes'; })[0];
       st.blockTypes = bt && bt.list && bt.list.length ? bt.list : DEFAULT_BLOCK_TYPES.slice();
+      var pr = r[2].filter(function (x) { return x.id === 'prefs'; })[0];
+      st.prefs = pr || { id: 'prefs' };
     });
   },
 
@@ -74,6 +76,11 @@ var App = {
     var arr = this.state.templates, i = arr.findIndex(function (x) { return x.id === t.id; });
     if (i >= 0) arr[i] = t; else arr.push(t);
     return put('templates', t).then(function () { return t; });
+  },
+
+  savePrefs: function () {
+    this.state.prefs.id = 'prefs';
+    return put('settings', this.state.prefs);
   },
 
   saveBlockTypes: function () {

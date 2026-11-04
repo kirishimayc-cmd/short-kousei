@@ -371,3 +371,55 @@ def test_mobile_video_and_cut_button_stay_visible(browser):
     pg.tap('#add-cut')
     assert pg.inner_text('#cut-count') == '31'
     ctx.close()
+
+
+# ---------- カット連動スクショ ----------
+def test_cut_with_screenshot(page):
+    open_new(page, duration=20)
+    page.click('#shot-btn'); page.wait_for_selector('#share-state.on')
+    page.check('#cut-shot')
+    page.fill('#cur-t', '2.5')
+    page.click('#add-cut')
+    page.wait_for_function("document.querySelectorAll('.shot').length === 1")
+    assert page.input_value('.shot .s-t') == '2.5'
+    assert page.inner_text('#cut-count') == '1'
+    assert page.locator('.cut-row .cut-thumb').count() == 1
+    # 設定は覚えておく
+    page.wait_for_timeout(700)
+    reload(page)
+    page.evaluate('App.go("edit", App.state.shorts[0].id)')
+    assert page.is_checked('#cut-shot')
+
+
+def test_cut_shot_without_share_warns(page):
+    open_new(page)
+    page.check('#cut-shot')
+    page.click('#add-cut')
+    page.wait_for_selector('.toast.error')
+    assert page.inner_text('#cut-count') == '1'
+
+
+def test_shoot_all_cuts(page):
+    open_new(page, duration=20, cuts=[{'t': 1}, {'t': 4}, {'t': 9}],
+             shots=[{'id': 'x', 'img': 'data:image/jpeg;base64,', 't': 4, 'notes': []}])
+    page.click('#shot-btn'); page.wait_for_selector('#share-state.on')
+    page.evaluate("() => { Player.yt = { seeks: [], seekTo(t){ this.seeks.push(t); }, pauseVideo(){}, getPlayerState(){ return 2; } }; }")
+    page.click('#shoot-cuts')
+    page.wait_for_function("document.querySelectorAll('.shot').length === 3", timeout=10000)
+    assert page.evaluate('Player.yt.seeks') == [1.15, 9.15]
+
+
+def test_no_screen_share_device(browser):
+    """iPhone のように画面共有が無い端末でも編集画面が壊れない"""
+    ctx = browser.new_context(viewport={'width': 390, 'height': 844}, is_mobile=True)
+    ctx.add_init_script("Object.defineProperty(navigator.mediaDevices, 'getDisplayMedia', {value: undefined});")
+    pg = ctx.new_page(); pg.set_default_timeout(5000)
+    errs = []; pg.on('pageerror', lambda e: errs.append(str(e)))
+    pg.goto((__import__('pathlib').Path(__file__).resolve().parents[2] / 'dist' / 'short-kousei.html').as_uri())
+    pg.wait_for_function('window.App && App.ready')
+    pg.evaluate("()=>{const s=newShort('research');s.cuts=[{t:1}];return App.save(s).then(n=>App.go('edit',n.id))}")
+    pg.wait_for_selector('#box-cuts .cut-row')
+    assert pg.locator('#shot-btn, #cut-shot, #shoot-cuts').count() == 0
+    assert pg.is_visible('#add-images')
+    assert errs == []
+    ctx.close()
