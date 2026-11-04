@@ -152,6 +152,30 @@ td.thumb-cell { width: 36px; }
 .player-frame { position: relative; width: 100%; aspect-ratio: 9 / 16; max-height: 70vh; margin: 0 auto 8px; background: #20304f; border-radius: 16px; overflow: hidden; }
 .player-frame iframe, .player-frame #yt-holder { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; }
 
+/* カット時の拡大（スクショ用） */
+.player-frame.big { position: fixed !important; inset: 0 !important; z-index: 1000; width: 100vw !important; height: 100vh !important; height: 100dvh !important;
+  max-height: none !important; margin: 0 !important; border-radius: 0 !important; aspect-ratio: auto !important; background: #000; }
+body.player-big { overflow: hidden; }
+body.player-big #toasts { display: none; }
+
+/* ---- library ---- */
+.lib-group { background: var(--card); border: 1px solid #fff; box-shadow: 0 4px 14px rgba(90,140,200,.09); border-radius: var(--radius); padding: 12px 16px; margin-bottom: 12px; }
+.lib-group > summary { cursor: pointer; display: flex; align-items: center; gap: 10px; list-style: none; font-weight: 700; font-size: 15px; }
+.lib-group > summary::-webkit-details-marker { display: none; }
+.lib-group > summary::before { content: '▸'; color: var(--accent); transition: transform .15s; }
+.lib-group[open] > summary::before { transform: rotate(90deg); }
+.lib-count { background: var(--pink); color: #fff; font-size: 12px; border-radius: 99px; padding: 0 9px; }
+.lib-meta { font-weight: 400; font-size: 12px; color: var(--ink2); }
+.lib-items { margin-top: 10px; display: flex; flex-direction: column; gap: 6px; }
+.lib-item { display: grid; grid-template-columns: 44px 1fr auto; gap: 10px; align-items: start; padding: 8px 10px; background: var(--soft); border-radius: 12px; }
+.lib-item img { width: 44px; height: 70px; object-fit: cover; border-radius: 8px; cursor: zoom-in; }
+.lib-item .ph { width: 44px; height: 44px; border-radius: 8px; background: #e3effb; display: flex; align-items: center; justify-content: center; color: var(--ink3); }
+.lib-fields { display: flex; flex-wrap: wrap; gap: 4px 12px; font-size: 13px; }
+.lib-fields b { color: var(--ink2); font-weight: 700; font-size: 11.5px; margin-right: 3px; }
+.lib-src { font-size: 12px; color: var(--accent-deep); cursor: pointer; text-decoration: underline; white-space: nowrap; }
+.owned-no { color: var(--danger); font-weight: 700; }
+.owned-yes { color: var(--ok); font-weight: 700; }
+
 /* ---- templates ---- */
 .tpl { background: var(--card); border: 1px solid #fff; box-shadow: 0 4px 14px rgba(90,140,200,.09); border-radius: var(--radius); padding: 14px; margin-bottom: 12px; }
 .tpl .head { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
@@ -219,6 +243,7 @@ table.grid tr:hover td { background: #fbf9f5; }
   .cmp-row .band { grid-column: 1 / 3; }
   .tpl .notes3 { grid-template-columns: 1fr; }
 }
+body.player-big .sticky-col, body.player-big .player-box { z-index: 1000; }
 
 </style>
 </head>
@@ -230,6 +255,7 @@ table.grid tr:hover td { background: #fbf9f5; }
     <button data-tab="edit">編集</button>
     <button data-tab="templates">型</button>
     <button data-tab="analyze">分析</button>
+    <button data-tab="library">メモ一覧</button>
   </nav>
   <button id="btn-settings" class="icon-btn" title="バックアップ">⚙ バックアップ</button>
 </header>
@@ -250,6 +276,7 @@ table.grid tr:hover td { background: #fbf9f5; }
   <section id="tab-edit" class="tab hidden"></section>
   <section id="tab-templates" class="tab hidden"></section>
   <section id="tab-analyze" class="tab hidden"></section>
+  <section id="tab-library" class="tab hidden"></section>
 </main>
 
 <div id="overlay" class="overlay hidden"></div>
@@ -389,7 +416,39 @@ function templateStats(templateId, shorts) {
   return { count: ps.length, avgViews: Math.round(sum / ps.length) };
 }
 
-if (typeof module !== 'undefined') module.exports = { metrics: metrics, templateStats: templateStats };
+// 全ショートの SE・テロップ・カット・スクショメモ・自由メモを、項目ごとにまとめる
+var LIBRARY_KEYS = {
+  ses: function (r) { return r.kind; },
+  telops: function (r) { return r.font; },
+  cuts: function (r) { return r.type; },
+  notes: function (r) { return r.label; },
+  memos: function (r) { return r.title; }
+};
+function library(section, shorts) {
+  var keyOf = LIBRARY_KEYS[section];
+  var groups = {};
+  (shorts || []).forEach(function (s) {
+    var rows = [];
+    if (section === 'notes') (s.shots || []).forEach(function (sh) { (sh.notes || []).forEach(function (n) { rows.push(Object.assign({ t: sh.t, img: sh.img }, n)); }); });
+    else rows = s[section] || [];
+    rows.forEach(function (r) {
+      var key = String(keyOf(r) || '').trim() || '（未入力）';
+      var g = groups[key] || (groups[key] = { key: key, items: [], ids: {} });
+      g.items.push(Object.assign({}, r, { shortId: s.id, title: s.title || '無題', kind: s.kind, views: Number(s.views) || 0, rowKind: r.kind }));
+      g.ids[s.id] = Number(s.views) || 0;
+    });
+  });
+  return Object.keys(groups).map(function (k) {
+    var g = groups[k], vs = Object.keys(g.ids).map(function (id) { return g.ids[id]; });
+    return { key: g.key, items: g.items, shortCount: vs.length,
+      avgViews: vs.length ? Math.round(vs.reduce(function (a, b) { return a + b; }, 0) / vs.length) : null };
+  }).sort(function (a, b) {
+    if ((a.key === '（未入力）') !== (b.key === '（未入力）')) return a.key === '（未入力）' ? 1 : -1;
+    return b.items.length - a.items.length || String(a.key).localeCompare(String(b.key), 'ja');
+  });
+}
+
+if (typeof module !== 'undefined') module.exports = { metrics: metrics, templateStats: templateStats, library: library };
 
 // ===== backup.js : JSON書き出し・検証 =====
 function exportData(d) {
@@ -601,7 +660,8 @@ var EditUI = { curT: 0, saveTimer: null, draft: null, showTypes: false };
 var TELOP_POS = ['上', '中央', '下', '左上', '右上', '左下', '右下', '顔の横'];
 var SE_KINDS = ['ドン', 'シュッ', 'ポン', 'キラーン', 'ピコン', 'ジャン', 'ドゥルルル', '笑い声', '拍手', 'ブブー', '効果音なし（無音）'];
 var NOTE_LABELS = ['構図', 'テロップ', '表情・動き', '色・エフェクト', 'その他'];
-var MEMO_PRESETS = ['気づき', 'マネしたい点', '改善点', '台本メモ'];
+var MEMO_PRESETS = ['気づき', 'マネしたい点', '改善点', '台本メモ', '音・BGM', '撮り方', '編集テク', 'サムネ・タイトル'];
+var CUT_TYPES = ['寄り', '引き', 'ジャンプカット', '場面転換', 'ズーム', '画像・素材挿入', 'リアクション', '早送り', 'スロー'];
 
 function editScheduleSave() {
   clearTimeout(EditUI.saveTimer);
@@ -667,6 +727,11 @@ function rowsBox(opt) {
         tr.appendChild(h('td', null, inp('number', r.t, function (v) { r.t = v; }, { class: 't r-t', step: '0.1', min: '0', title: '秒' })));
         if (opt.rowExtra) tr.appendChild(h('td', { class: 'thumb-cell' }, opt.rowExtra(r)));
         opt.cols.forEach(function (c) {
+          if (c.options) {
+            tr.appendChild(h('td', null, h('select', { class: 'r-' + c.key, onchange: function (e) { r[c.key] = e.target.value; editScheduleSave(); } },
+              c.options.map(function (o) { return h('option', { value: o, text: o || '—', selected: (r[c.key] || '') === o }); }))));
+            return;
+          }
           tr.appendChild(h('td', null, inp('text', r[c.key], function (v) { r[c.key] = v; },
             { class: 'r-' + c.key, placeholder: c.ph || '', list: c.list || null })));
         });
@@ -843,9 +908,9 @@ function timeBar() {
     h('span', { class: 'lbl wide-only', text: '今の秒数' }), ti, h('span', { class: 'lbl', text: '秒' }),
     nudge(-1), nudge(-0.5), nudge(0.5), nudge(1),
     h('span', { class: 'spacer' }),
-    h('label', { class: 'cut-shot-toggle', title: 'カットを押したら動画を2秒止めて、また再生する（スクショを撮る時間）' },
+    h('label', { class: 'cut-shot-toggle', title: 'カットを押したら動画を画面いっぱいに拡大して3秒止め、元に戻して再生する（スクショを撮る時間）' },
       h('input', { type: 'checkbox', id: 'cut-pause', checked: App.state.prefs.cutPause !== false, onchange: function (e) { App.state.prefs.cutPause = e.target.checked; App.savePrefs(); } }),
-      '2秒停止'),
+      '3秒停止＋拡大'),
     canShareScreen() ? h('label', { class: 'cut-shot-toggle', title: 'カットを押した時に、同時にスクショも撮る（画面共有中のみ）' },
       h('input', { type: 'checkbox', id: 'cut-shot', checked: !!App.state.prefs.cutShot, onchange: function (e) { App.state.prefs.cutShot = e.target.checked; App.savePrefs(); } }),
       '📸連動') : null,
@@ -855,10 +920,10 @@ function timeBar() {
       editScheduleSave();
       redrawCuts();
       editRefreshDerived();
-      pauseForCut();
+      var big = pauseForCut();
       if (canShareScreen() && App.state.prefs.cutShot) {
         if (!isSharing()) { toast('📸連動を使うには、先に「📸 画面共有を開始」を押してください', true); return; }
-        captureShotAt(t).then(function () { redrawCuts(); });
+        setTimeout(function () { captureShotAt(t).then(function () { redrawCuts(); }); }, big ? 600 : 0);
       }
     } }, '✂ カット＋'));
 }
@@ -878,23 +943,55 @@ function captureShotAt(t) {
   }).catch(function (e) { toast(e.message, true); refreshShareUI(); });
 }
 
-// カットを押したら2秒止めて再生再開（スマホでスクショを撮る時間）
+// カットを押したら動画を大きくして3秒止め、元に戻して再生再開（スクショを撮る時間）
+var CUT_HOLD_MS = 3000;
 function pauseForCut() {
-  if (App.state.prefs.cutPause === false) return;
+  if (App.state.prefs.cutPause === false) return false;
+  var frame = document.getElementById('player-frame');
+  if (!frame) return false;
   var y = Player.yt;
-  if (!y || !y.getPlayerState || !y.pauseVideo) return;
-  var playing = y.getPlayerState() === 1;
-  if (!playing && !Player.pauseTimer) return;   // 元から止まっていたら何もしない
-  if (playing) y.pauseVideo();
+  var playing = !!(y && y.getPlayerState && y.getPlayerState() === 1);
+  var resume = playing || (Player.pauseTimer && Player.resumeAfter);
+  if (playing && y.pauseVideo) y.pauseVideo();
+  frame.classList.add('big');
+  document.body.classList.add('player-big');
   clearTimeout(Player.pauseTimer);
-  var st = document.getElementById('player-state');
-  if (st) st.textContent = '⏸ 2秒停止中（今のうちにスクショ）';
+  Player.resumeAfter = resume;
   Player.pauseTimer = setTimeout(function () {
     Player.pauseTimer = null;
-    if (Player.yt === y) { try { y.playVideo(); } catch (e) { /* noop */ } }
-    var st2 = document.getElementById('player-state');
-    if (st2) st2.textContent = '再生中の秒数が「今の秒数」に自動で入ります';
-  }, 2000);
+    frame.classList.remove('big');
+    document.body.classList.remove('player-big');
+    if (Player.resumeAfter && Player.yt === y && y) { try { y.playVideo(); } catch (e) { /* noop */ } }
+    Player.resumeAfter = false;
+  }, CUT_HOLD_MS);
+  return true;
+}
+
+function attachImageToCut(file, t) {
+  return imageFileToJpeg(file).then(function (img) {
+    var S = EditUI.draft; if (!S) return;
+    var sh = shotNear(t);
+    if (sh) sh.img = img; else S.shots.push({ id: uid(), img: img, t: t, notes: [] });
+    editScheduleSave(); redrawCuts();
+    var b = document.getElementById('box-shots'); if (b && b.redraw) b.redraw();
+    toast(t + '秒のカットにスクショを登録しました');
+  }).catch(function (e) { toast(e.message, true); });
+}
+
+function assignImagesToCuts(files) {
+  var list = Array.prototype.filter.call(files || [], function (f) { return /^image\//.test(f.type); })
+    .sort(function (a, b) { return (a.lastModified - b.lastModified) || a.name.localeCompare(b.name); });
+  var S = EditUI.draft;
+  if (!list.length || !S) return Promise.resolve();
+  var empty = S.cuts.map(function (c) { return Number(c.t) || 0; }).sort(function (a, b) { return a - b; }).filter(function (t) { return !shotNear(t); });
+  if (!empty.length) { toast('スクショが無いカットがありません', true); return Promise.resolve(); }
+  var n = Math.min(list.length, empty.length);
+  return Promise.all(list.slice(0, n).map(imageFileToJpeg)).then(function (imgs) {
+    imgs.forEach(function (img, i) { S.shots.push({ id: uid(), img: img, t: empty[i], notes: [] }); });
+    editScheduleSave(); redrawCuts();
+    var b = document.getElementById('box-shots'); if (b && b.redraw) b.redraw();
+    toast(n + '枚をカットに割り当てました' + (list.length > n ? '（余った' + (list.length - n) + '枚は入れていません）' : ''));
+  }).catch(function (e) { toast(e.message, true); });
 }
 
 function wait(ms) { return new Promise(function (r) { setTimeout(r, ms); }); }
@@ -945,17 +1042,28 @@ function renderEdit(el) {
     id: 'box-cuts', key: 'cuts', title: 'カット', rowClass: 'cut-row', addId: 'add-cut-row', addLabel: '＋ 行を追加',
     badge: function () { return h('span', { class: 'count', id: 'cut-count', text: String(S.cuts.length) }); },
     sub: '「✂ カット＋」で今の秒数を記録', emptyHint: '動画を見ながら、画面が切り替わるたびに「✂ カット＋」を押してください。',
-    cols: [{ key: 'memo', label: 'カットのメモ', ph: '例：引き→寄り、ジャンプカット' }],
+    cols: [{ key: 'type', label: '種類', ph: '例：寄り', list: 'cut-types' }, { key: 'memo', label: 'カットのメモ', ph: '何が変わったか・ねらい' }],
+    lists: [datalist('cut-types', CUT_TYPES)],
     rowExtra: function (r) {
       var sh = shotNear(Number(r.t) || 0);
-      return sh ? h('img', { class: 'cut-thumb', src: sh.img, alt: '', onclick: function () { showOverlay(sh.img); } }) : null;
+      var fileIn = h('input', { type: 'file', accept: 'image/*', hidden: true, onchange: function () {
+        var f = fileIn.files[0]; if (!f) return;
+        attachImageToCut(f, Number(r.t) || 0);
+      } });
+      return h('div', { class: 'row', style: { flexWrap: 'nowrap', gap: '4px' } },
+        sh ? h('img', { class: 'cut-thumb', src: sh.img, alt: '', onclick: function () { showOverlay(sh.img); } }) : null,
+        h('button', { class: 'xbtn attach-shot', title: sh ? 'スクショを差し替え' : 'このカットにスクショを登録', onclick: function () { fileIn.click(); } }, sh ? '↻' : '🖼'),
+        fileIn);
     },
     extra: function () {
-      return canShareScreen() ? h('div', { class: 'row', style: { marginBottom: '8px' } },
-        h('button', { class: 'btn small', id: 'shoot-cuts', onclick: function (e) { shootAllCuts(e.currentTarget); } }, '📸 カット位置をまとめて撮影'),
-        h('span', { class: 'hint', style: { margin: 0 }, text: 'スクショが無いカットの位置へ自動で移動して撮ります（YouTube・画面共有中）' })) : null;
+      var multi = h('input', { type: 'file', accept: 'image/*', multiple: true, hidden: true, onchange: function () { assignImagesToCuts(multi.files); multi.value = ''; } });
+      return h('div', { class: 'row', style: { marginBottom: '8px' } },
+        h('button', { class: 'btn small', id: 'assign-cut-images', onclick: function () { multi.click(); } }, '🖼 スクショをカットに順番に割り当て'),
+        canShareScreen() ? h('button', { class: 'btn small', id: 'shoot-cuts', onclick: function (e) { shootAllCuts(e.currentTarget); } }, '📸 カット位置をまとめて撮影') : null,
+        multi,
+        h('span', { class: 'hint', style: { margin: 0, width: '100%' }, text: '「順番に割り当て」：選んだ画像を、スクショが無いカットへ時間順に入れます（iPhoneで撮った分をまとめて取り込む時に）' }));
     },
-    make: function () { return { t: Number(EditUI.curT) || 0, memo: '' }; }
+    make: function () { return { t: Number(EditUI.curT) || 0, type: '', memo: '' }; }
   }));
   right.appendChild(rowsBox({
     id: 'box-telops', key: 'telops', title: 'テロップ', rowClass: 'telop-row', addId: 'add-telop', addLabel: '＋ テロップを追加',
@@ -969,9 +1077,11 @@ function renderEdit(el) {
   right.appendChild(rowsBox({
     id: 'box-ses', key: 'ses', title: 'SE（効果音）', rowClass: 'se-row', addId: 'add-se', addLabel: '＋ SEを追加',
     emptyHint: 'どこでどんな音が鳴ったかを記録します。',
-    cols: [{ key: 'kind', label: '種類', ph: '例：ドン', list: 'se-kinds' }, { key: 'memo', label: 'メモ', ph: '使いどころ・音量など' }],
+    cols: [{ key: 'kind', label: '種類', ph: '例：ドン', list: 'se-kinds' }, { key: 'scene', label: '使いどころ', ph: '例：オチの瞬間' },
+      { key: 'effect', label: '効果・印象', ph: '例：笑いが起きやすい' }, { key: 'owned', label: '手持ち', options: ['', '持ってる', '持ってない'] },
+      { key: 'memo', label: 'メモ', ph: '音量・入れるタイミングなど' }],
     lists: [datalist('se-kinds', SE_KINDS)],
-    make: function () { return { t: Number(EditUI.curT) || 0, kind: '', memo: '' }; }
+    make: function () { return { t: Number(EditUI.curT) || 0, kind: '', scene: '', effect: '', owned: '', memo: '' }; }
   }));
   right.appendChild(memosBox());
 
@@ -1016,7 +1126,8 @@ function loadYouTubeAPI(cb) {
 
 function destroyPlayer() {
   clearInterval(Player.poll); Player.poll = null;
-  clearTimeout(Player.pauseTimer); Player.pauseTimer = null;
+  clearTimeout(Player.pauseTimer); Player.pauseTimer = null; Player.resumeAfter = false;
+  document.body.classList.remove('player-big');
   if (Player.yt && Player.yt.destroy) { try { Player.yt.destroy(); } catch (e) { /* noop */ } }
   Player.yt = null; Player.site = null;
 }
@@ -1397,6 +1508,100 @@ function renderAnalyze(el) {
 }
 window.renderAnalyze = renderAnalyze;
 
+// ===== ui/library.js : メモ一覧（全ショートの SE・テロップ・カット・スクショメモ・自由メモを項目別に）=====
+var LibraryUI = { section: 'ses', kind: 'all', owned: 'all', q: '', open: {} };
+
+var LIB_SECTIONS = [
+  ['ses', 'SE', '種類'], ['telops', 'テロップ', 'フォント'], ['cuts', 'カット', '種類'],
+  ['notes', 'スクショメモ', '項目'], ['memos', '自由メモ', '見出し']
+];
+var LIB_FIELDS = {
+  ses: [['scene', '使いどころ'], ['effect', '効果'], ['owned', '手持ち'], ['memo', 'メモ']],
+  telops: [['text', '内容'], ['size', 'サイズ'], ['color', '色・縁'], ['pos', '位置'], ['memo', 'メモ']],
+  cuts: [['memo', 'メモ']],
+  notes: [['body', 'メモ']],
+  memos: [['body', '内容']]
+};
+
+function libItemText(it) {
+  return Object.keys(it).map(function (k) { return typeof it[k] === 'string' && k !== 'img' ? it[k] : ''; }).join(' ').toLowerCase();
+}
+
+function renderLibrary(el) {
+  var body = h('div');
+  function draw() {
+    body.innerHTML = '';
+    var shorts = App.state.shorts.filter(function (s) { return LibraryUI.kind === 'all' || s.kind === LibraryUI.kind; });
+    var q = LibraryUI.q.trim().toLowerCase();
+    var groups = library(LibraryUI.section, shorts).map(function (g) {
+      var items = g.items.filter(function (it) {
+        if (LibraryUI.section === 'ses' && LibraryUI.owned !== 'all') {
+          if (LibraryUI.owned === 'no' && it.owned !== '持ってない') return false;
+          if (LibraryUI.owned === 'yes' && it.owned !== '持ってる') return false;
+        }
+        return !q || g.key.toLowerCase().indexOf(q) >= 0 || libItemText(it).indexOf(q) >= 0;
+      });
+      return Object.assign({}, g, { items: items });
+    }).filter(function (g) { return g.items.length; });
+    var secLabel = LIB_SECTIONS.filter(function (x) { return x[0] === LibraryUI.section; })[0];
+    if (!groups.length) {
+      body.appendChild(h('div', { class: 'empty', text: 'まだ' + secLabel[1] + 'のメモがありません。編集画面で入力すると、ここに' + secLabel[2] + 'ごとに集まります。' }));
+      return;
+    }
+    groups.forEach(function (g) {
+      var det = h('details', { class: 'lib-group', open: LibraryUI.open[LibraryUI.section + '|' + g.key] !== false });
+      det.addEventListener('toggle', function () { LibraryUI.open[LibraryUI.section + '|' + g.key] = det.open; });
+      det.appendChild(h('summary', null, h('span', { text: g.key }), h('span', { class: 'lib-count', text: String(g.items.length) }),
+        h('span', { class: 'lib-meta num', text: g.shortCount + '本で使用・平均再生 ' + fmtNum(g.avgViews) })));
+      var list = h('div', { class: 'lib-items' });
+      g.items.slice().sort(function (a, b) { return b.views - a.views; }).forEach(function (it) {
+        var sh = it.img || (function () {
+          var s = App.find(it.shortId);
+          var x = s && (s.shots || []).filter(function (p) { return Math.abs((Number(p.t) || 0) - (Number(it.t) || 0)) < 0.05; })[0];
+          return x && x.img;
+        })();
+        var fields = h('div', { class: 'lib-fields' });
+        (LIB_FIELDS[LibraryUI.section] || []).forEach(function (f) {
+          var v = it[f[0]];
+          if (!v) return;
+          fields.appendChild(h('span', { class: f[0] === 'owned' ? (v === '持ってない' ? 'owned-no' : 'owned-yes') : '' }, h('b', { text: f[1] }), v));
+        });
+        if (!fields.childNodes.length) fields.appendChild(h('span', { class: 'hint', style: { margin: 0 }, text: '（メモなし）' }));
+        list.appendChild(h('div', { class: 'lib-item' },
+          sh ? h('img', { src: sh, alt: '', onclick: function () { showOverlay(sh); } }) : h('div', { class: 'ph', text: '♪' }),
+          h('div', null, fields, h('div', { class: 'hint', style: { margin: '3px 0 0' } },
+            h('span', { class: 'badge ' + it.kind, text: KIND_LABELS[it.kind] }), ' ', it.title, (it.t != null && LibraryUI.section !== 'memos') ? '・' + it.t + '秒' : '', '・再生 ' + fmtNum(it.views))),
+          h('span', { class: 'lib-src', onclick: function () { if (it.t != null) EditUI.curT = Number(it.t) || 0; App.go('edit', it.shortId); setTimeout(function () { var ti = document.getElementById('cur-t'); if (ti) ti.value = EditUI.curT; }, 0); } }, '開く')));
+      });
+      det.appendChild(list);
+      body.appendChild(det);
+    });
+  }
+  var ownedSeg = segControl('lib-owned', [['all', '全部'], ['no', '持ってないSE'], ['yes', '持ってるSE']], LibraryUI.owned, function (k) {
+    LibraryUI.owned = k;
+    ownedSeg.querySelectorAll('button').forEach(function (b) { b.classList.toggle('on', b.dataset.kind === k); });
+    draw();
+  });
+  ownedSeg.classList.toggle('hidden', LibraryUI.section !== 'ses');
+  var section = segControl('lib-section', LIB_SECTIONS.map(function (x) { return [x[0], x[1]]; }), LibraryUI.section, function (k) {
+    LibraryUI.section = k;
+    section.querySelectorAll('button').forEach(function (b) { b.classList.toggle('on', b.dataset.kind === k); });
+    ownedSeg.classList.toggle('hidden', k !== 'ses');
+    draw();
+  });
+  var kind = segControl('lib-kind', [['all', 'すべて'], ['research', '研究'], ['plan', '企画'], ['posted', '自分の投稿']], LibraryUI.kind, function (k) {
+    LibraryUI.kind = k;
+    kind.querySelectorAll('button').forEach(function (b) { b.classList.toggle('on', b.dataset.kind === k); });
+    draw();
+  });
+  el.appendChild(h('div', { class: 'toolbar' }, h('h2', { class: 'page', text: 'メモ一覧' }), section));
+  el.appendChild(h('div', { class: 'toolbar' }, kind, ownedSeg,
+    h('input', { type: 'search', id: 'lib-search', placeholder: 'キーワードで絞り込み', value: LibraryUI.q, style: { width: '200px' }, oninput: function (e) { LibraryUI.q = e.target.value; draw(); } })));
+  el.appendChild(body);
+  draw();
+}
+window.renderLibrary = renderLibrary;
+
 // ===== ui/app.js : 全体の制御 =====
 function h(tag, attrs) {
   var el = document.createElement(tag);
@@ -1517,7 +1722,7 @@ var App = {
   render: function () {
     var el = document.getElementById('tab-' + this.tab);
     el.innerHTML = '';
-    var fn = { list: window.renderList, edit: window.renderEdit, templates: window.renderTemplates, analyze: window.renderAnalyze }[this.tab];
+    var fn = { list: window.renderList, edit: window.renderEdit, templates: window.renderTemplates, analyze: window.renderAnalyze, library: window.renderLibrary }[this.tab];
     if (fn) fn(el);
   },
 
