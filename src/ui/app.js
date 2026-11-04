@@ -93,6 +93,7 @@ var App = {
 
   go: function (tab, arg) {
     if (this.tab === 'edit' && window.editSaveNow) editSaveNow();
+    if (window.destroyPlayer && (tab !== 'edit' || arg)) destroyPlayer();
     this.tab = tab;
     if (tab === 'edit' && arg) this.currentId = arg;
     document.querySelectorAll('nav [data-tab]').forEach(function (b) { b.classList.toggle('active', b.dataset.tab === tab); });

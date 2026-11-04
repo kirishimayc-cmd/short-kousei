@@ -89,7 +89,7 @@ function playerUrl(raw) {
   var m = u.match(/(?:youtube\.com\/(?:shorts\/|embed\/|live\/|watch\?(?:.*&)?v=)|youtu\.be\/)([A-Za-z0-9_-]{11})/i);
   if (m) {
     var id = m[1];
-    return { site: 'youtube', url: 'https://www.youtube-nocookie.com/embed/' + id + '?autoplay=1&loop=1&playlist=' + id + '&playsinline=1&rel=0' };
+    return { site: 'youtube', id: id, url: 'https://www.youtube-nocookie.com/embed/' + id + '?autoplay=1&loop=1&playlist=' + id + '&playsinline=1&rel=0' };
   }
   m = u.match(/tiktok\.com\/.*\/video\/(\d+)/i);
   if (m) return { site: 'tiktok', url: 'https://www.tiktok.com/player/v1/' + m[1] + '?autoplay=1&loop=1' };

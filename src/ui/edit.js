@@ -205,7 +205,9 @@ function infoBox() {
     h('h3', null, '基本情報', h('span', { id: 'edit-badge', class: 'badge ' + S.kind, text: KIND_LABELS[S.kind] })),
     field('種別', kind),
     field('タイトル', inp('text', S.title, function (v) { S.title = v; }, { id: 'f-title', placeholder: '動画タイトル' })),
-    field('URL', inp('url', S.url, function (v) { S.url = v; }, { id: 'f-url', placeholder: 'https://youtube.com/shorts/...' })),
+    field('URL', inp('url', S.url, function (v) { S.url = v; }, { id: 'f-url', placeholder: 'https://youtube.com/shorts/...', onchange: function () {
+      var old = document.querySelector('.player-box'); if (old) old.replaceWith(playerBox());
+    } })),
     h('div', { class: 'fields2' },
       field('チャンネル', inp('text', S.channel, function (v) { S.channel = v; }, { id: 'f-channel' })),
       field('尺（秒）', inp('number', S.duration || '', function (v) { S.duration = v; }, { id: 'f-duration', min: '0', step: '0.1' }))),
@@ -235,8 +237,9 @@ function infoBox() {
 }
 
 function timeBar() {
-  function setT(v) { EditUI.curT = Math.max(0, Math.round(v * 10) / 10); ti.value = EditUI.curT; }
-  var ti = h('input', { type: 'number', id: 'cur-t', step: '0.1', min: '0', value: EditUI.curT, oninput: function (e) { EditUI.curT = Number(e.target.value) || 0; } });
+  function setT(v) { setCurT(v, false); }
+  var ti = h('input', { type: 'number', id: 'cur-t', step: '0.1', min: '0', value: EditUI.curT, oninput: function (e) { EditUI.curT = Number(e.target.value) || 0; },
+    onchange: function (e) { setCurT(Number(e.target.value) || 0, false); } });
   function nudge(d) { return h('button', { class: 'btn small', onclick: function () { setT((Number(EditUI.curT) || 0) + d); } }, (d > 0 ? '+' : '') + d); }
   return h('div', { class: 'timebar' },
     h('span', { class: 'lbl', text: '今の秒数' }), ti, h('span', { class: 'lbl', text: '秒' }),
@@ -259,7 +262,7 @@ function renderEdit(el) {
         h('button', { class: 'btn', onclick: function () { createShort('plan'); } }, '＋ 企画'))));
     return;
   }
-  if (!EditUI.draft || EditUI.draft.id !== s.id) { editSaveNow(); EditUI.draft = JSON.parse(JSON.stringify(s)); }
+  if (!EditUI.draft || EditUI.draft.id !== s.id) { editSaveNow(); EditUI.curT = 0; EditUI.draft = JSON.parse(JSON.stringify(s)); }
   var S = EditUI.draft;
 
   var left = h('div', { class: 'sticky-col' });
@@ -319,29 +322,113 @@ function refreshShareUI() {
 }
 onShareEnded(function () { refreshShareUI(); });
 
+// ---- ツール内の動画プレーヤー ----
+var Player = { yt: null, ytReady: false, ytQueue: [], poll: null, site: null };
+
+function loadYouTubeAPI(cb) {
+  if (window.YT && window.YT.Player) return cb();
+  Player.ytQueue.push(cb);
+  if (document.getElementById('yt-api')) return;
+  var prev = window.onYouTubeIframeAPIReady;
+  window.onYouTubeIframeAPIReady = function () { if (prev) prev(); Player.ytQueue.splice(0).forEach(function (f) { f(); }); };
+  var sc = document.createElement('script');
+  sc.id = 'yt-api'; sc.src = 'https://www.youtube.com/iframe_api';
+  sc.onerror = function () { var st = document.getElementById('player-state'); if (st) st.textContent = 'YouTubeの再生部品を読み込めませんでした（ネット接続を確認してください）'; };
+  document.head.appendChild(sc);
+}
+
+function destroyPlayer() {
+  clearInterval(Player.poll); Player.poll = null;
+  if (Player.yt && Player.yt.destroy) { try { Player.yt.destroy(); } catch (e) { /* noop */ } }
+  Player.yt = null; Player.site = null;
+}
+
+function setCurT(v, fromPlayer) {
+  EditUI.curT = Math.max(0, Math.round(v * 10) / 10);
+  var ti = document.getElementById('cur-t');
+  if (ti && (fromPlayer ? document.activeElement !== ti : true)) ti.value = EditUI.curT;
+  if (!fromPlayer && Player.yt && Player.yt.seekTo) { try { Player.yt.seekTo(EditUI.curT, true); } catch (e) { /* noop */ } }
+}
+
+function mountPlayer(frame, p) {
+  destroyPlayer();
+  Player.site = p.site;
+  if (p.site === 'youtube') {
+    var holder = h('div', { id: 'yt-holder' });
+    frame.appendChild(holder);
+    loadYouTubeAPI(function () {
+      if (!document.body.contains(holder)) return;
+      Player.yt = new YT.Player(holder, {
+        videoId: p.id, width: '100%', height: '100%',
+        playerVars: { playsinline: 1, rel: 0, loop: 1, playlist: p.id, modestbranding: 1, origin: location.origin },
+        events: {
+          onReady: function () { var st = document.getElementById('player-state'); if (st) st.textContent = '再生中の秒数が「今の秒数」に自動で入ります'; },
+          onError: function (e) {
+            var st = document.getElementById('player-state');
+            if (st) st.textContent = (e.data === 101 || e.data === 150) ? 'この動画は投稿者が埋め込み再生を許可していません。下のリンクから元のページで見てください' : '再生エラー（' + e.data + '）。下のリンクから元のページで見てください';
+          }
+        }
+      });
+      clearInterval(Player.poll);
+      Player.poll = setInterval(function () {
+        var y = Player.yt;
+        if (!y || !y.getPlayerState || !document.body.contains(frame)) return;
+        if (y.getPlayerState() === 1) setCurT(y.getCurrentTime(), true);
+      }, 200);
+    });
+  } else {
+    frame.appendChild(h('iframe', { src: p.url, allow: 'autoplay; encrypted-media; picture-in-picture', allowfullscreen: true, referrerpolicy: 'strict-origin-when-cross-origin' }));
+  }
+}
+
 function playerBox() {
   var S = EditUI.draft;
-  return h('div', { class: 'box player-box' },
-    h('h3', null, '動画を見る・撮る'),
-    h('div', { class: 'row' },
-      h('button', { class: 'btn', id: 'open-player', onclick: function () {
-        if (!S.url) { toast('先にURLを入力してください', true); return; }
-        var p = playerUrl(S.url);
-        if (!p) { toast('URLの形式が正しくありません（https:// から始まるURLを貼ってください）', true); return; }
-        var hgt = Math.min(screen.availHeight - 80, 860), wid = Math.round(hgt * 9 / 16);
-        var w = window.open(p.url, 'shortPlayer', 'popup,width=' + wid + ',height=' + hgt + ',left=40,top=40');
-        var a = document.getElementById('player-fallback');
-        if (a) { a.href = /^https?:/i.test(S.url) ? S.url : 'https://' + S.url; a.classList.remove('hidden'); }
-        if (!w) toast('小窓がブロックされました。アドレスバー右の「ポップアップ」を許可してください', true);
-        else try { w.focus(); } catch (e) { /* noop */ }
-      } }, '▶ 小窓で再生'),
-      h('a', { id: 'player-fallback', class: 'hidden hint', target: '_blank', rel: 'noopener', style: { margin: 0 }, text: '再生できない時は元のページで開く' })),
-    h('div', { class: 'row' },
-      h('button', { class: 'btn primary shot-btn', id: 'shot-btn', onclick: takeShot }, '📸'),
-      h('button', { class: 'btn small ghost hidden', id: 'stop-share', onclick: function () { stopShare(); refreshShareUI(); } }, '共有を止める')),
-    h('div', { id: 'share-state', class: 'share-state' }),
-    h('p', { class: 'hint', text: '初回だけ、共有画面の「ウィンドウ」タブで動画の小窓を選んでください。撮った時の秒数は上の「今の秒数」が入ります（あとで直せます）。' }));
+  var p = playerUrl(S.url);
+  var canShare = !!(navigator.mediaDevices && navigator.mediaDevices.getDisplayMedia);
+  var box = h('div', { class: 'box player-box' }, h('h3', null, '動画を見る・撮る'));
+  if (p && p.site !== 'other') {
+    var frame = h('div', { id: 'player-frame', class: 'player-frame', 'data-site': p.site });
+    box.appendChild(frame);
+    setTimeout(function () { mountPlayer(frame, p); }, 0);
+    box.appendChild(h('div', { id: 'player-state', class: 'share-state', text: location.protocol === 'file:' ? 'ファイルから開いているとYouTubeは再生できません（エラー153）。公開URLから開いてください' : '読み込み中…' }));
+  } else {
+    destroyPlayer();
+    box.appendChild(h('p', { class: 'hint', text: S.url ? 'このURLはツール内で再生できません（YouTube・TikTok・Instagramに対応）' : '基本情報にURLを貼ると、ここで再生できます' }));
+  }
+  if (S.url && p) box.appendChild(h('a', { id: 'player-fallback', class: 'hint', href: /^https?:/i.test(S.url) ? S.url : 'https://' + S.url, target: '_blank', rel: 'noopener', text: '元のページで開く ↗' }));
+  var fileIn = h('input', { type: 'file', accept: 'image/*', multiple: true, hidden: true, onchange: function () { addImageFiles(fileIn.files); fileIn.value = ''; } });
+  box.appendChild(h('div', { class: 'row', style: { marginTop: '10px' } },
+    canShare ? h('button', { class: 'btn primary shot-btn', id: 'shot-btn', onclick: takeShot }, '📸') : null,
+    h('button', { class: 'btn', id: 'add-images', onclick: function () { fileIn.click(); } }, '🖼 画像を追加'),
+    canShare ? h('button', { class: 'btn small ghost hidden', id: 'stop-share', onclick: function () { stopShare(); refreshShareUI(); } }, '共有を止める') : null,
+    fileIn));
+  if (canShare) box.appendChild(h('div', { id: 'share-state', class: 'share-state' }));
+  box.appendChild(h('p', { class: 'hint', text: canShare
+    ? '📸：初回だけ共有の確認で「このタブ」を選ぶと、以降はワンタップで動画の部分だけを保存します。スクショを Ctrl+V で貼り付けることもできます。'
+    : 'スクショは本体で撮って（サイドボタン＋音量上げ）、「画像を追加」から取り込んでください。複数まとめて選べます。' }));
+  return box;
 }
+
+function addImageFiles(files) {
+  var list = Array.prototype.filter.call(files || [], function (f) { return /^image\//.test(f.type); });
+  if (!list.length || !EditUI.draft) return Promise.resolve();
+  var t = Number(EditUI.curT) || 0;
+  return Promise.all(list.map(imageFileToJpeg)).then(function (imgs) {
+    var S = EditUI.draft; if (!S) return;
+    imgs.forEach(function (img) { S.shots.push({ id: uid(), img: img, t: t, notes: [] }); });
+    editScheduleSave();
+    var b = document.getElementById('box-shots'); if (b && b.redraw) b.redraw();
+    toast('画像を' + imgs.length + '枚追加しました（' + t + '秒）');
+  }).catch(function (e) { toast(e.message, true); });
+}
+
+document.addEventListener('paste', function (e) {
+  if (App.tab !== 'edit' || !EditUI.draft || !e.clipboardData) return;
+  var files = Array.prototype.slice.call(e.clipboardData.files || []);
+  if (!files.length) return;
+  e.preventDefault();
+  addImageFiles(files);
+});
 
 function takeShot() {
   if (!isSharing()) {
@@ -349,7 +436,7 @@ function takeShot() {
       .catch(function (e) { if (e && e.name !== 'NotAllowedError') toast('画面共有を開始できませんでした: ' + e.message, true); refreshShareUI(); });
     return;
   }
-  grabFrame().then(function (img) {
+  grabFrame(document.getElementById('player-frame')).then(function (img) {
     var S = EditUI.draft;
     if (!S) return;
     S.shots.push({ id: uid(), img: img, t: Number(EditUI.curT) || 0, notes: [] });

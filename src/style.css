@@ -129,6 +129,10 @@ table.rows td.x { width: 28px; }
 .stats-inline { display: flex; gap: 14px; flex-wrap: wrap; font-size: 12.5px; color: var(--ink2); margin-top: 8px; }
 .stats-inline b { color: var(--ink); font-size: 14px; }
 
+/* ---- player ---- */
+.player-frame { position: relative; width: 100%; aspect-ratio: 9 / 16; max-height: 70vh; margin: 0 auto 8px; background: #111; border-radius: 9px; overflow: hidden; }
+.player-frame iframe, .player-frame #yt-holder { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; }
+
 /* ---- templates ---- */
 .tpl { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); padding: 14px; margin-bottom: 12px; }
 .tpl .head { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
@@ -169,6 +173,13 @@ table.grid tr:hover td { background: #fbf9f5; }
 .toast.out { opacity: 0; }
 
 @media (max-width: 900px) {
+  .topbar { gap: 8px; padding: 0 10px; height: auto; min-height: 54px; flex-wrap: wrap; }
+  .brand { font-size: 13px; }
+  nav button { padding: 8px 10px; }
+  main { padding: 14px 10px 80px; }
+  .player-frame { max-height: 62vh; }
+  table.rows { display: block; overflow-x: auto; }
+  .timebar { flex-wrap: wrap; position: sticky; top: 54px; z-index: 10; }
   .edit-grid { grid-template-columns: 1fr; }
   .sticky-col { position: static; }
   .cmp-row { grid-template-columns: 1fr 70px; }

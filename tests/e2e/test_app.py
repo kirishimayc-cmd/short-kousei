@@ -170,10 +170,12 @@ def test_shot_zoom_and_delete(page):
     assert page.locator('.shot').count() == 0
 
 
-def test_open_player_without_url(page):
+def test_player_without_url(page):
     open_new(page)
-    page.click('#open-player')
-    page.wait_for_selector('.toast.error')
+    assert 'URLを貼ると' in page.inner_text('.player-box')
+    page.fill('#f-url', 'https://youtu.be/abcDEF12_-x')
+    page.dispatch_event('#f-url', 'change')
+    page.wait_for_selector('#player-frame[data-site=youtube]')
 
 
 # ---------- Task 7 ----------
@@ -317,11 +319,33 @@ def test_flush_on_pagehide(page):
     assert page.evaluate("new Promise(r=>{const q=indexedDB.open('short-kousei');q.onsuccess=()=>{const g=q.result.transaction('shorts').objectStore('shorts').get('%s');g.onsuccess=()=>r(g.result.title)}})" % sid) == '閉じる直前'
 
 
-def test_open_player_uses_embed_popup(page):
+
+
+def test_youtube_embeds_in_tool(page):
     open_new(page, url='https://www.youtube.com/shorts/abcDEF12_-x')
-    page.evaluate("() => { window.__opened = []; window.open = (u, n, f) => { window.__opened.push([u, n, f]); return { focus(){} }; }; }")
-    page.click('#open-player')
-    u, n, f = page.evaluate('window.__opened[0]')
-    assert u.startswith('https://www.youtube-nocookie.com/embed/abcDEF12_-x')
-    assert 'popup' in f and 'width=' in f
+    page.wait_for_selector('#player-frame')
+    assert page.get_attribute('#player-frame', 'data-site') == 'youtube'
     assert page.is_visible('#player-fallback')
+
+
+def test_add_images_from_file(page, tmp_path):
+    import base64
+    png = base64.b64decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8DwHwAFBQIAX8jx0gAAAABJRU5ErkJggg==')
+    a = tmp_path / 'a.png'; a.write_bytes(png)
+    b = tmp_path / 'b.png'; b.write_bytes(png)
+    open_new(page)
+    page.fill('#cur-t', '3')
+    with page.expect_file_chooser() as fc:
+        page.click('#add-images')
+    fc.value.set_files([str(a), str(b)])
+    page.wait_for_function("document.querySelectorAll('.shot').length === 2")
+    assert page.locator('.shot .s-t').first.input_value() == '3'
+
+
+def test_paste_image(page):
+    open_new(page)
+    page.evaluate("""() => { const c=document.createElement('canvas'); c.width=4; c.height=4;
+      return new Promise(r => c.toBlob(b => { const dt = new DataTransfer();
+        dt.items.add(new File([b], 'p.png', {type:'image/png'}));
+        document.dispatchEvent(new ClipboardEvent('paste', {clipboardData: dt})); r(); })); }""")
+    page.wait_for_selector('.shot img')
