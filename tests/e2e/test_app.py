@@ -47,3 +47,80 @@ def test_export_import_roundtrip(page, tmp_path):
     page.wait_for_selector('.toast:not(.error)')
     reload(page)
     assert page.evaluate('App.state.shorts.map(s=>s.title)') == ['往復']
+
+
+# ---------- Task 5 ----------
+def open_new(page, kind='research', **fields):
+    sid = page.evaluate("""(f) => { const s = Object.assign(newShort(f.kind), f.fields);
+        return App.save(s).then(n => { App.go('edit', n.id); return n.id; }); }""",
+        {'kind': kind, 'fields': fields})
+    page.wait_for_selector('#f-title')
+    return sid
+
+
+def reopen(page, sid):
+    reload(page)
+    page.evaluate('id => App.go("edit", id)', sid)
+    page.wait_for_selector('#f-title')
+
+
+def test_edit_persists(page):
+    sid = open_new(page)
+    page.fill('#f-title', 'テスト動画')
+    page.fill('#f-duration', '30')
+    page.fill('#f-views', '12000')
+    page.fill('#f-tags', '猫, 料理')
+    page.fill('#cur-t', '2')
+    page.click('.blockbtn[data-type="フック"]')
+    for t in ['1', '3.5', '7']:
+        page.fill('#cur-t', t)
+        page.click('#add-cut')
+    page.click('#add-telop')
+    page.fill('.telop-row .r-text', 'え、これ何？')
+    page.fill('.telop-row .r-font', 'けいふぉんと')
+    page.fill('.telop-row .r-size', '大')
+    page.click('#add-se')
+    page.fill('.se-row .r-kind', 'ドン')
+    page.click('#add-memo')
+    page.fill('.memo .m-title', '気づき')
+    page.fill('.memo .m-body', '最初の1秒で顔アップ')
+    assert page.inner_text('#cut-count') == '3'
+    page.wait_for_timeout(900)
+    reopen(page, sid)
+    assert page.input_value('#f-title') == 'テスト動画'
+    assert page.input_value('#f-views') == '12000'
+    assert page.inner_text('#cut-count') == '3'
+    assert page.input_value('.block-row .b-end') == '2'
+    assert page.input_value('.telop-row .r-font') == 'けいふぉんと'
+    assert page.input_value('.se-row .r-kind') == 'ドン'
+    assert page.input_value('.memo .m-body') == '最初の1秒で顔アップ'
+    assert page.evaluate(f'App.find("{sid}").tags') == ['猫', '料理']
+    assert page.locator('#tab-edit .band .seg-b').count() == 1
+
+
+def test_block_swap(page):
+    sid = open_new(page, duration=30)
+    page.fill('#cur-t', '5')
+    page.click('.blockbtn[data-type="展開"]')
+    page.fill('.block-row .b-start', '12')
+    page.fill('.block-row .b-end', '4')
+    page.wait_for_timeout(900)
+    reopen(page, sid)
+    assert page.input_value('.block-row .b-start') == '4'
+    assert page.input_value('.block-row .b-end') == '12'
+
+
+def test_zero_duration_band(page):
+    open_new(page)
+    assert '尺未入力' in page.inner_text('#tab-edit .band')
+
+
+def test_custom_block_type(page):
+    open_new(page, duration=20)
+    page.click('#manage-types')
+    page.fill('#new-type-name', '回収')
+    page.click('#add-type')
+    page.wait_for_selector('.blockbtn[data-type="回収"]')
+    page.wait_for_timeout(300)
+    reload(page)
+    assert '回収' in page.evaluate('App.state.blockTypes.map(b=>b.name)')

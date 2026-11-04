@@ -38,6 +38,7 @@ def page(browser):
     ctx = browser.new_context(viewport={'width': 1280, 'height': 900})
     ctx.add_init_script(FAKE_SHARE)
     pg = ctx.new_page()
+    pg.set_default_timeout(5000)
     errors = []
     pg.on('pageerror', lambda e: errors.append(str(e)))
     pg.goto(DIST.as_uri())
