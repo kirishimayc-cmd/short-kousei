@@ -326,14 +326,16 @@ function playerBox() {
     h('div', { class: 'row' },
       h('button', { class: 'btn', id: 'open-player', onclick: function () {
         if (!S.url) { toast('先にURLを入力してください', true); return; }
-        var w = window.open(S.url, 'shortPlayer', 'popup,width=440,height=800,left=40,top=40');
-        if (!w) {
-          toast('小窓がブロックされました。アドレスバー右の「ポップアップ」を許可してください', true);
-          var a = document.getElementById('player-fallback');
-          if (a) { a.href = S.url; a.classList.remove('hidden'); }
-        }
+        var p = playerUrl(S.url);
+        if (!p) { toast('URLの形式が正しくありません（https:// から始まるURLを貼ってください）', true); return; }
+        var hgt = Math.min(screen.availHeight - 80, 860), wid = Math.round(hgt * 9 / 16);
+        var w = window.open(p.url, 'shortPlayer', 'popup,width=' + wid + ',height=' + hgt + ',left=40,top=40');
+        var a = document.getElementById('player-fallback');
+        if (a) { a.href = /^https?:/i.test(S.url) ? S.url : 'https://' + S.url; a.classList.remove('hidden'); }
+        if (!w) toast('小窓がブロックされました。アドレスバー右の「ポップアップ」を許可してください', true);
+        else try { w.focus(); } catch (e) { /* noop */ }
       } }, '▶ 小窓で再生'),
-      h('a', { id: 'player-fallback', class: 'hidden', target: '_blank', rel: 'noopener', text: '新しいタブで開く' })),
+      h('a', { id: 'player-fallback', class: 'hidden hint', target: '_blank', rel: 'noopener', style: { margin: 0 }, text: '再生できない時は元のページで開く' })),
     h('div', { class: 'row' },
       h('button', { class: 'btn primary shot-btn', id: 'shot-btn', onclick: takeShot }, '📸'),
       h('button', { class: 'btn small ghost hidden', id: 'stop-share', onclick: function () { stopShare(); refreshShareUI(); } }, '共有を止める')),

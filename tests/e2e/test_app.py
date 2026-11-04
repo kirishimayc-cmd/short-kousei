@@ -315,3 +315,13 @@ def test_flush_on_pagehide(page):
     page.evaluate("window.dispatchEvent(new Event('pagehide'))")
     page.wait_for_timeout(150)   # デバウンス(500ms)より前
     assert page.evaluate("new Promise(r=>{const q=indexedDB.open('short-kousei');q.onsuccess=()=>{const g=q.result.transaction('shorts').objectStore('shorts').get('%s');g.onsuccess=()=>r(g.result.title)}})" % sid) == '閉じる直前'
+
+
+def test_open_player_uses_embed_popup(page):
+    open_new(page, url='https://www.youtube.com/shorts/abcDEF12_-x')
+    page.evaluate("() => { window.__opened = []; window.open = (u, n, f) => { window.__opened.push([u, n, f]); return { focus(){} }; }; }")
+    page.click('#open-player')
+    u, n, f = page.evaluate('window.__opened[0]')
+    assert u.startswith('https://www.youtube-nocookie.com/embed/abcDEF12_-x')
+    assert 'popup' in f and 'width=' in f
+    assert page.is_visible('#player-fallback')

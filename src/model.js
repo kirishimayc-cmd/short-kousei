@@ -80,7 +80,25 @@ function shortFromTemplate(t, duration) {
   return s;
 }
 
-if (typeof module !== 'undefined') module.exports = {
+// 動画URL → アプリに取られにくい埋め込み専用の再生URL
+function playerUrl(raw) {
+  var u = String(raw || '').trim();
+  if (!u) return null;
+  if (!/^[a-z][a-z0-9+.-]*:/i.test(u)) u = 'https://' + u;
+  if (!/^https?:\/\//i.test(u)) return null;
+  var m = u.match(/(?:youtube\.com\/(?:shorts\/|embed\/|live\/|watch\?(?:.*&)?v=)|youtu\.be\/)([A-Za-z0-9_-]{11})/i);
+  if (m) {
+    var id = m[1];
+    return { site: 'youtube', url: 'https://www.youtube-nocookie.com/embed/' + id + '?autoplay=1&loop=1&playlist=' + id + '&playsinline=1&rel=0' };
+  }
+  m = u.match(/tiktok\.com\/.*\/video\/(\d+)/i);
+  if (m) return { site: 'tiktok', url: 'https://www.tiktok.com/player/v1/' + m[1] + '?autoplay=1&loop=1' };
+  m = u.match(/instagram\.com\/(?:reel|reels|p)\/([A-Za-z0-9_-]+)/i);
+  if (m) return { site: 'instagram', url: 'https://www.instagram.com/reel/' + m[1] + '/embed/' };
+  return { site: 'other', url: u };
+}
+
+if (typeof module !== 'undefined') module.exports = { playerUrl: playerUrl,
   DEFAULT_BLOCK_TYPES: DEFAULT_BLOCK_TYPES, KIND_LABELS: KIND_LABELS, uid: uid, num: num,
   newShort: newShort, normalizeShort: normalizeShort,
   templateFromShort: templateFromShort, shortFromTemplate: shortFromTemplate
