@@ -198,7 +198,10 @@ table.grid tr:hover td { background: #fbf9f5; }
   .player-frame { width: auto; height: 34vh; max-height: none; margin-bottom: 6px; }
   .player-box .share-state { font-size: 11px; }
   .player-box .row { margin: 4px 0 2px; }
-  .timebar { flex-wrap: nowrap; margin: 0 0 4px; padding: 6px 8px; }
+  .timebar { flex-wrap: wrap; margin: 0 0 4px; padding: 6px 8px; row-gap: 4px; }
+  .timebar .lbl { display: none; }
+  .cut-shot-toggle { font-size: 11px; }
+  .timebar #add-cut { margin-left: auto; }
   .timebar input { width: 64px; }
   .timebar .btn.primary { padding: 9px 14px; font-size: 15px; }
   .wide-only { display: none; }
@@ -832,6 +835,9 @@ function timeBar() {
     h('span', { class: 'lbl wide-only', text: '今の秒数' }), ti, h('span', { class: 'lbl', text: '秒' }),
     nudge(-1), nudge(-0.5), nudge(0.5), nudge(1),
     h('span', { class: 'spacer' }),
+    h('label', { class: 'cut-shot-toggle', title: 'カットを押したら動画を2秒止めて、また再生する（スクショを撮る時間）' },
+      h('input', { type: 'checkbox', id: 'cut-pause', checked: App.state.prefs.cutPause !== false, onchange: function (e) { App.state.prefs.cutPause = e.target.checked; App.savePrefs(); } }),
+      '⏸2秒'),
     canShareScreen() ? h('label', { class: 'cut-shot-toggle', title: 'カットを押した時に、同時にスクショも撮る（画面共有中のみ）' },
       h('input', { type: 'checkbox', id: 'cut-shot', checked: !!App.state.prefs.cutShot, onchange: function (e) { App.state.prefs.cutShot = e.target.checked; App.savePrefs(); } }),
       '📸連動') : null,
@@ -841,6 +847,7 @@ function timeBar() {
       editScheduleSave();
       redrawCuts();
       editRefreshDerived();
+      pauseForCut();
       if (canShareScreen() && App.state.prefs.cutShot) {
         if (!isSharing()) { toast('📸連動を使うには、先に「📸 画面共有を開始」を押してください', true); return; }
         captureShotAt(t).then(function () { redrawCuts(); });
@@ -861,6 +868,25 @@ function captureShotAt(t) {
     editScheduleSave();
     var b = document.getElementById('box-shots'); if (b && b.redraw) b.redraw();
   }).catch(function (e) { toast(e.message, true); refreshShareUI(); });
+}
+
+// カットを押したら2秒止めて再生再開（スマホでスクショを撮る時間）
+function pauseForCut() {
+  if (App.state.prefs.cutPause === false) return;
+  var y = Player.yt;
+  if (!y || !y.getPlayerState || !y.pauseVideo) return;
+  var playing = y.getPlayerState() === 1;
+  if (!playing && !Player.pauseTimer) return;   // 元から止まっていたら何もしない
+  if (playing) y.pauseVideo();
+  clearTimeout(Player.pauseTimer);
+  var st = document.getElementById('player-state');
+  if (st) st.textContent = '⏸ 2秒停止中（今のうちにスクショ）';
+  Player.pauseTimer = setTimeout(function () {
+    Player.pauseTimer = null;
+    if (Player.yt === y) { try { y.playVideo(); } catch (e) { /* noop */ } }
+    var st2 = document.getElementById('player-state');
+    if (st2) st2.textContent = '再生中の秒数が「今の秒数」に自動で入ります';
+  }, 2000);
 }
 
 function wait(ms) { return new Promise(function (r) { setTimeout(r, ms); }); }
@@ -982,6 +1008,7 @@ function loadYouTubeAPI(cb) {
 
 function destroyPlayer() {
   clearInterval(Player.poll); Player.poll = null;
+  clearTimeout(Player.pauseTimer); Player.pauseTimer = null;
   if (Player.yt && Player.yt.destroy) { try { Player.yt.destroy(); } catch (e) { /* noop */ } }
   Player.yt = null; Player.site = null;
 }
