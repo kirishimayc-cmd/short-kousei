@@ -17,6 +17,9 @@ def main():
     out = ROOT / 'dist' / 'short-kousei.html'
     out.parent.mkdir(exist_ok=True)
     out.write_text(html, encoding='utf-8')
+    # GitHub Pages 用（main の / と /docs どちらを公開元にしても開けるように）
+    (ROOT / 'index.html').write_text(html, encoding='utf-8')
+    (ROOT / 'docs' / 'index.html').write_text(html, encoding='utf-8')
     print('built', out)
 
 
