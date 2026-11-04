@@ -423,3 +423,38 @@ def test_no_screen_share_device(browser):
     assert pg.is_visible('#add-images')
     assert errs == []
     ctx.close()
+
+
+# ---------- カットで2秒停止 ----------
+MOCK_YT = """() => { Player.yt = { log: [], st: 1, getPlayerState(){ return this.st; }, getCurrentTime(){ return 3; },
+    pauseVideo(){ this.log.push('pause'); this.st = 2; }, playVideo(){ this.log.push('play'); this.st = 1; }, seekTo(){} }; }"""
+
+
+def test_cut_pauses_two_seconds(page):
+    open_new(page, duration=20)
+    page.evaluate(MOCK_YT)
+    assert page.is_checked('#cut-pause')
+    page.click('#add-cut')
+    assert page.evaluate('Player.yt.log') == ['pause']
+    page.wait_for_timeout(1500)
+    assert page.evaluate('Player.yt.log') == ['pause']
+    page.wait_for_timeout(800)
+    assert page.evaluate('Player.yt.log') == ['pause', 'play']
+
+
+def test_cut_pause_can_be_turned_off(page):
+    open_new(page, duration=20)
+    page.evaluate(MOCK_YT)
+    page.uncheck('#cut-pause')
+    page.click('#add-cut')
+    page.wait_for_timeout(300)
+    assert page.evaluate('Player.yt.log') == []
+
+
+def test_cut_when_already_paused_does_not_autoplay(page):
+    open_new(page, duration=20)
+    page.evaluate(MOCK_YT)
+    page.evaluate('Player.yt.st = 2')
+    page.click('#add-cut')
+    page.wait_for_timeout(2300)
+    assert page.evaluate('Player.yt.log') == []
