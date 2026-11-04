@@ -174,3 +174,74 @@ def test_open_player_without_url(page):
     open_new(page)
     page.click('#open-player')
     page.wait_for_selector('.toast.error')
+
+
+# ---------- Task 7 ----------
+SEED = """(list) => Promise.all(list.map(f => App.save(Object.assign(newShort(f.kind), f)))).then(() => App.go('list'))"""
+
+
+def test_list_filter_sort(page):
+    page.evaluate(SEED, [
+        {'kind': 'research', 'title': 'A研究', 'views': 500, 'tags': ['猫']},
+        {'kind': 'posted', 'title': 'B投稿', 'views': 9000},
+        {'kind': 'posted', 'title': 'C投稿', 'views': 100, 'memos': [{'title': 'x', 'body': '秘密の単語'}]},
+        {'kind': 'plan', 'title': 'D企画'}])
+    assert page.locator('#tab-list .card').count() == 4
+    page.click('#tab-list [data-kind=posted]')
+    assert page.locator('#tab-list .card').count() == 2
+    page.select_option('#sort', 'views')
+    assert page.locator('#tab-list .card .title').all_inner_texts() == ['B投稿', 'C投稿']
+    page.click('#tab-list [data-kind=all]')
+    page.fill('#search', '秘密')
+    assert page.locator('#tab-list .card .title').all_inner_texts() == ['C投稿']
+    page.fill('#search', '猫')
+    assert page.locator('#tab-list .card .title').all_inner_texts() == ['A研究']
+    page.fill('#search', '')
+    page.click('#tab-list .card >> text=D企画')
+    assert page.input_value('#f-title') == 'D企画'
+
+
+def test_new_buttons(page):
+    page.click('#new-research')
+    page.wait_for_selector('#f-title')
+    assert page.input_value('#f-kind') == 'research'
+
+
+def test_template_flow(page):
+    sid = open_new(page, title='元動画', duration=30, blocks=[{'type': 'フック', 'start': 0, 'end': 3, 'memo': '顔アップ'}])
+    page.once('dialog', lambda d: d.accept('型A'))
+    page.click('#save-template')
+    page.wait_for_function('App.state.templates.length === 1')
+    page.evaluate(f"App.remove('shorts', '{sid}')")
+    page.click('nav [data-tab=templates]')
+    assert page.input_value('.tpl .head input') == '型A'
+    page.once('dialog', lambda d: d.accept('60'))
+    page.click('.tpl .use-tpl')
+    page.wait_for_selector('#f-title')
+    assert page.input_value('#f-kind') == 'plan'
+    assert page.input_value('.block-row .b-end') == '6'
+    assert page.input_value('.block-row .b-memo') == '顔アップ'
+    # 投稿として数字を入れると型の平均に反映
+    page.select_option('#f-kind', 'posted')
+    page.fill('#f-views', '4000')
+    page.wait_for_timeout(700)
+    page.click('nav [data-tab=templates]')
+    assert page.inner_text('.tpl .tpl-avg') == '4,000'
+    assert page.inner_text('.tpl .tpl-count') == '1'
+
+
+def test_analyze_table(page):
+    page.evaluate(SEED, [
+        {'kind': 'posted', 'title': '尺なし', 'views': 10, 'duration': 0},
+        {'kind': 'posted', 'title': '尺あり', 'views': 900, 'duration': 30,
+         'blocks': [{'type': 'フック', 'start': 0, 'end': 2}, {'type': 'オチ', 'start': 24, 'end': 30}],
+         'cuts': [{'t': 5}, {'t': 10}]}])
+    page.click('nav [data-tab=analyze]')
+    txt = page.inner_text('#tab-analyze')
+    assert 'NaN' not in txt and 'Infinity' not in txt and 'null' not in txt
+    rows = page.locator('#tab-analyze table.grid tbody tr')
+    assert rows.count() == 2
+    first = rows.nth(0).inner_text()
+    assert '尺あり' in first and '80%' in first and '10' in first
+    assert '—' in rows.nth(1).inner_text()
+    assert page.locator('#tab-analyze .cmp-row').count() == 2

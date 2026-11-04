@@ -13,7 +13,7 @@ function editScheduleSave() {
 }
 function editSaveNow() {
   clearTimeout(EditUI.saveTimer);
-  if (!EditUI.draft) return Promise.resolve();
+  if (!EditUI.draft || !App.find(EditUI.draft.id)) return Promise.resolve();
   return App.save(EditUI.draft);
 }
 window.addEventListener('beforeunload', function () { if (EditUI.draft) editSaveNow(); });
@@ -254,7 +254,7 @@ function renderEdit(el) {
         h('button', { class: 'btn', onclick: function () { createShort('plan'); } }, '＋ 企画'))));
     return;
   }
-  if (!EditUI.draft || EditUI.draft.id !== s.id) { EditUI.draft = JSON.parse(JSON.stringify(s)); }
+  if (!EditUI.draft || EditUI.draft.id !== s.id) { editSaveNow(); EditUI.draft = JSON.parse(JSON.stringify(s)); }
   var S = EditUI.draft;
 
   var left = h('div', { class: 'sticky-col' });
