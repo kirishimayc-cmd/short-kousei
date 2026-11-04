@@ -113,6 +113,9 @@ table.rows td { padding: 4px 4px; border-bottom: 1px solid #f0ede6; vertical-ali
 table.rows input, table.rows select { width: 100%; padding: 4px 6px; }
 table.rows input.t { width: 64px; text-align: right; }
 table.rows td.x { width: 28px; }
+.cut-thumb { width: 30px; height: 44px; object-fit: cover; border-radius: 4px; cursor: zoom-in; display: block; }
+td.thumb-cell { width: 36px; }
+.cut-shot-toggle { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; color: #ddd; white-space: nowrap; cursor: pointer; }
 .xbtn { border: 0; background: none; color: var(--ink3); cursor: pointer; font-size: 16px; line-height: 1; padding: 4px; }
 .xbtn:hover { color: var(--danger); }
 .addrow { margin-top: 8px; }
@@ -645,12 +648,13 @@ function rowsBox(opt) {
     var list = S[opt.key];
     list.sort(function (a, b) { return (Number(a.t) || 0) - (Number(b.t) || 0); });
     box.appendChild(h('h3', null, opt.title, opt.badge ? opt.badge() : null, h('span', { class: 'sub', text: opt.sub || '' })));
-    if (opt.extra) box.appendChild(opt.extra());
+    var ex = opt.extra && opt.extra(); if (ex) box.appendChild(ex);
     if (list.length) {
       var tb = h('tbody');
       list.forEach(function (r, i) {
         var tr = h('tr', { class: opt.rowClass });
         tr.appendChild(h('td', null, inp('number', r.t, function (v) { r.t = v; }, { class: 't r-t', step: '0.1', min: '0', title: '秒' })));
+        if (opt.rowExtra) tr.appendChild(h('td', { class: 'thumb-cell' }, opt.rowExtra(r)));
         opt.cols.forEach(function (c) {
           tr.appendChild(h('td', null, inp('text', r[c.key], function (v) { r[c.key] = v; },
             { class: 'r-' + c.key, placeholder: c.ph || '', list: c.list || null })));
@@ -659,7 +663,7 @@ function rowsBox(opt) {
         tb.appendChild(tr);
       });
       box.appendChild(h('table', { class: 'rows' },
-        h('thead', null, h('tr', null, h('th', { text: '秒' }), opt.cols.map(function (c) { return h('th', { text: c.label }); }), h('th'))), tb));
+        h('thead', null, h('tr', null, h('th', { text: '秒' }), opt.rowExtra ? h('th') : null, opt.cols.map(function (c) { return h('th', { text: c.label }); }), h('th'))), tb));
     } else {
       box.appendChild(h('p', { class: 'hint', text: opt.emptyHint }));
     }
@@ -828,12 +832,60 @@ function timeBar() {
     h('span', { class: 'lbl wide-only', text: '今の秒数' }), ti, h('span', { class: 'lbl', text: '秒' }),
     nudge(-1), nudge(-0.5), nudge(0.5), nudge(1),
     h('span', { class: 'spacer' }),
+    canShareScreen() ? h('label', { class: 'cut-shot-toggle', title: 'カットを押した時に、同時にスクショも撮る（画面共有中のみ）' },
+      h('input', { type: 'checkbox', id: 'cut-shot', checked: !!App.state.prefs.cutShot, onchange: function (e) { App.state.prefs.cutShot = e.target.checked; App.savePrefs(); } }),
+      '📸連動') : null,
     h('button', { class: 'btn primary', id: 'add-cut', title: '今の秒数でカットを追加', onclick: function () {
-      EditUI.draft.cuts.push({ t: Number(EditUI.curT) || 0, memo: '' });
+      var t = Number(EditUI.curT) || 0;
+      EditUI.draft.cuts.push({ t: t, memo: '' });
       editScheduleSave();
-      var cb = document.getElementById('box-cuts'); if (cb && cb.redraw) cb.redraw();
+      redrawCuts();
       editRefreshDerived();
+      if (canShareScreen() && App.state.prefs.cutShot) {
+        if (!isSharing()) { toast('📸連動を使うには、先に「📸 画面共有を開始」を押してください', true); return; }
+        captureShotAt(t).then(function () { redrawCuts(); });
+      }
     } }, '✂ カット＋'));
+}
+
+function canShareScreen() { return !!(navigator.mediaDevices && navigator.mediaDevices.getDisplayMedia); }
+function redrawCuts() { var cb = document.getElementById('box-cuts'); if (cb && cb.redraw) cb.redraw(); }
+function shotNear(t) {
+  return (EditUI.draft.shots || []).filter(function (sh) { return Math.abs((Number(sh.t) || 0) - t) < 0.05; })[0] || null;
+}
+
+function captureShotAt(t) {
+  return grabFrame(document.getElementById('player-frame')).then(function (img) {
+    var S = EditUI.draft; if (!S) return;
+    S.shots.push({ id: uid(), img: img, t: t, notes: [] });
+    editScheduleSave();
+    var b = document.getElementById('box-shots'); if (b && b.redraw) b.redraw();
+  }).catch(function (e) { toast(e.message, true); refreshShareUI(); });
+}
+
+function wait(ms) { return new Promise(function (r) { setTimeout(r, ms); }); }
+
+function shootAllCuts(btn) {
+  if (!isSharing()) { toast('先に「📸 画面共有を開始」を押してください', true); return; }
+  if (!Player.yt || !Player.yt.seekTo) { toast('まとめて撮影はYouTubeの動画で使えます', true); return; }
+  var S = EditUI.draft;
+  var todo = S.cuts.map(function (c) { return Number(c.t) || 0; }).filter(function (t) { return !shotNear(t); });
+  if (!todo.length) { toast('すべてのカットにスクショがあります'); return; }
+  btn.disabled = true;
+  var done = 0;
+  try { Player.yt.pauseVideo(); } catch (e) { /* noop */ }
+  todo.reduce(function (pr, t) {
+    return pr.then(function () {
+      if (EditUI.draft !== S || !isSharing()) throw new Error('stop');
+      btn.textContent = '撮影中… ' + (done + 1) + '/' + todo.length;
+      Player.yt.seekTo(Math.round((t + 0.15) * 100) / 100, true);
+      return wait(800).then(function () { return captureShotAt(t); }).then(function () { done++; });
+    });
+  }, Promise.resolve()).catch(function () { /* 中断 */ }).then(function () {
+    btn.disabled = false; btn.textContent = '📸 カット位置をまとめて撮影';
+    redrawCuts();
+    toast(done + '枚撮影しました');
+  });
 }
 
 function renderEdit(el) {
@@ -860,6 +912,15 @@ function renderEdit(el) {
     badge: function () { return h('span', { class: 'count', id: 'cut-count', text: String(S.cuts.length) }); },
     sub: '「✂ カット＋」で今の秒数を記録', emptyHint: '動画を見ながら、画面が切り替わるたびに「✂ カット＋」を押してください。',
     cols: [{ key: 'memo', label: 'カットのメモ', ph: '例：引き→寄り、ジャンプカット' }],
+    rowExtra: function (r) {
+      var sh = shotNear(Number(r.t) || 0);
+      return sh ? h('img', { class: 'cut-thumb', src: sh.img, alt: '', onclick: function () { showOverlay(sh.img); } }) : null;
+    },
+    extra: function () {
+      return canShareScreen() ? h('div', { class: 'row', style: { marginBottom: '8px' } },
+        h('button', { class: 'btn small', id: 'shoot-cuts', onclick: function (e) { shootAllCuts(e.currentTarget); } }, '📸 カット位置をまとめて撮影'),
+        h('span', { class: 'hint', style: { margin: 0 }, text: 'スクショが無いカットの位置へ自動で移動して撮ります（YouTube・画面共有中）' })) : null;
+    },
     make: function () { return { t: Number(EditUI.curT) || 0, memo: '' }; }
   }));
   right.appendChild(rowsBox({
@@ -1338,7 +1399,7 @@ var App = {
   ready: false,
   tab: 'list',
   currentId: null,
-  state: { shorts: [], templates: [], blockTypes: DEFAULT_BLOCK_TYPES.slice() },
+  state: { shorts: [], templates: [], blockTypes: DEFAULT_BLOCK_TYPES.slice(), prefs: {} },
 
   init: function () {
     var self = this;
@@ -1357,6 +1418,8 @@ var App = {
       st.templates = r[1];
       var bt = r[2].filter(function (x) { return x.id === 'blockTypes'; })[0];
       st.blockTypes = bt && bt.list && bt.list.length ? bt.list : DEFAULT_BLOCK_TYPES.slice();
+      var pr = r[2].filter(function (x) { return x.id === 'prefs'; })[0];
+      st.prefs = pr || { id: 'prefs' };
     });
   },
 
@@ -1377,6 +1440,11 @@ var App = {
     var arr = this.state.templates, i = arr.findIndex(function (x) { return x.id === t.id; });
     if (i >= 0) arr[i] = t; else arr.push(t);
     return put('templates', t).then(function () { return t; });
+  },
+
+  savePrefs: function () {
+    this.state.prefs.id = 'prefs';
+    return put('settings', this.state.prefs);
   },
 
   saveBlockTypes: function () {
