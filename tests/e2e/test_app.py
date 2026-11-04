@@ -431,15 +431,18 @@ MOCK_YT = """() => { Player.yt = { log: [], st: 1, getPlayerState(){ return this
 
 
 def test_cut_pauses_two_seconds(page):
-    open_new(page, duration=20)
+    open_new(page, duration=20, url='https://youtu.be/abcDEF12_-x')
+    page.wait_for_selector('#player-frame')
     page.evaluate(MOCK_YT)
     assert page.is_checked('#cut-pause')
     page.click('#add-cut')
     assert page.evaluate('Player.yt.log') == ['pause']
-    page.wait_for_timeout(1500)
+    assert 'big' in page.get_attribute('#player-frame', 'class')
+    page.wait_for_timeout(2500)
     assert page.evaluate('Player.yt.log') == ['pause']
     page.wait_for_timeout(800)
     assert page.evaluate('Player.yt.log') == ['pause', 'play']
+    assert 'big' not in page.get_attribute('#player-frame', 'class')
 
 
 def test_cut_pause_can_be_turned_off(page):
@@ -456,5 +459,66 @@ def test_cut_when_already_paused_does_not_autoplay(page):
     page.evaluate(MOCK_YT)
     page.evaluate('Player.yt.st = 2')
     page.click('#add-cut')
-    page.wait_for_timeout(2300)
+    page.wait_for_timeout(3300)
     assert page.evaluate('Player.yt.log') == []
+
+
+# ---------- v3: カットのスクショ登録・SE項目・メモ一覧 ----------
+PNG = __import__('base64').b64decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8DwHwAFBQIAX8jx0gAAAABJRU5ErkJggg==')
+
+
+def test_attach_image_to_cut(page, tmp_path):
+    f = tmp_path / 'c.png'; f.write_bytes(PNG)
+    open_new(page, duration=20, cuts=[{'t': 4}])
+    with page.expect_file_chooser() as fc:
+        page.click('.cut-row .attach-shot')
+    fc.value.set_files(str(f))
+    page.wait_for_selector('.cut-row .cut-thumb')
+    assert page.input_value('.shot .s-t') == '4'
+
+
+def test_assign_images_to_cuts_in_order(page, tmp_path):
+    fs = []
+    for n in 'ab':
+        f = tmp_path / (n + '.png'); f.write_bytes(PNG); fs.append(str(f))
+    open_new(page, duration=20, cuts=[{'t': 1}, {'t': 4}, {'t': 9}],
+             shots=[{'id': 'x', 'img': 'data:image/png;base64,' + __import__('base64').b64encode(PNG).decode(), 't': 4, 'notes': []}])
+    with page.expect_file_chooser() as fc:
+        page.click('#assign-cut-images')
+    fc.value.set_files(fs)
+    page.wait_for_function("document.querySelectorAll('.shot').length === 3")
+    assert sorted(float(x) for x in page.locator('.shot .s-t').evaluate_all('els => els.map(e => e.value)')) == [1, 4, 9]
+    assert page.locator('.cut-row .cut-thumb').count() == 3
+
+
+def test_se_fields_persist(page):
+    sid = open_new(page)
+    page.click('#add-se')
+    page.fill('.se-row .r-kind', 'キラーン')
+    page.fill('.se-row .r-scene', '商品が出る瞬間')
+    page.fill('.se-row .r-effect', '目線が集まる')
+    page.select_option('.se-row .r-owned', '持ってない')
+    page.click('#add-cut-row')
+    page.fill('.cut-row .r-type', 'ジャンプカット')
+    page.wait_for_timeout(800)
+    reopen(page, sid)
+    assert page.input_value('.se-row .r-scene') == '商品が出る瞬間'
+    assert page.input_value('.se-row .r-owned') == '持ってない'
+    assert page.input_value('.cut-row .r-type') == 'ジャンプカット'
+
+
+def test_library_se_view(page):
+    page.evaluate(SEED, [
+        {'kind': 'research', 'title': '動画A', 'views': 100, 'ses': [{'t': 1, 'kind': 'ドン', 'owned': '持ってない', 'effect': '強調'}]},
+        {'kind': 'posted', 'title': '動画B', 'views': 300, 'ses': [{'t': 2, 'kind': 'ドン', 'owned': '持ってる'}, {'t': 3, 'kind': 'ポン'}]}])
+    page.click('nav [data-tab=library]')
+    page.click('#lib-section [data-kind=ses]')
+    groups = page.locator('#tab-library .lib-group')
+    assert groups.count() == 2
+    assert 'ドン' in groups.nth(0).inner_text() and '2' in groups.nth(0).locator('.lib-count').inner_text()
+    assert '強調' in page.inner_text('#tab-library')
+    page.click('#lib-owned [data-kind=no]')
+    assert page.locator('#tab-library .lib-item').count() == 1
+    page.click('#tab-library .lib-item .lib-src')
+    page.wait_for_selector('#f-title')
+    assert page.input_value('#f-title') == '動画A'

@@ -118,7 +118,7 @@ var App = {
   render: function () {
     var el = document.getElementById('tab-' + this.tab);
     el.innerHTML = '';
-    var fn = { list: window.renderList, edit: window.renderEdit, templates: window.renderTemplates, analyze: window.renderAnalyze }[this.tab];
+    var fn = { list: window.renderList, edit: window.renderEdit, templates: window.renderTemplates, analyze: window.renderAnalyze, library: window.renderLibrary }[this.tab];
     if (fn) fn(el);
   },
 

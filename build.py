@@ -4,7 +4,7 @@ import pathlib
 ROOT = pathlib.Path(__file__).resolve().parent
 SRC = ROOT / 'src'
 ORDER = ['model.js', 'analysis.js', 'backup.js', 'db.js', 'capture.js',
-         'ui/band.js', 'ui/edit.js', 'ui/list.js', 'ui/templates.js', 'ui/analyze.js', 'ui/app.js']
+         'ui/band.js', 'ui/edit.js', 'ui/list.js', 'ui/templates.js', 'ui/analyze.js', 'ui/library.js', 'ui/app.js']
 
 
 def main():

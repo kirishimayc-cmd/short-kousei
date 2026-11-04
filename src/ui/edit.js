@@ -4,7 +4,8 @@ var EditUI = { curT: 0, saveTimer: null, draft: null, showTypes: false };
 var TELOP_POS = ['上', '中央', '下', '左上', '右上', '左下', '右下', '顔の横'];
 var SE_KINDS = ['ドン', 'シュッ', 'ポン', 'キラーン', 'ピコン', 'ジャン', 'ドゥルルル', '笑い声', '拍手', 'ブブー', '効果音なし（無音）'];
 var NOTE_LABELS = ['構図', 'テロップ', '表情・動き', '色・エフェクト', 'その他'];
-var MEMO_PRESETS = ['気づき', 'マネしたい点', '改善点', '台本メモ'];
+var MEMO_PRESETS = ['気づき', 'マネしたい点', '改善点', '台本メモ', '音・BGM', '撮り方', '編集テク', 'サムネ・タイトル'];
+var CUT_TYPES = ['寄り', '引き', 'ジャンプカット', '場面転換', 'ズーム', '画像・素材挿入', 'リアクション', '早送り', 'スロー'];
 
 function editScheduleSave() {
   clearTimeout(EditUI.saveTimer);
@@ -70,6 +71,11 @@ function rowsBox(opt) {
         tr.appendChild(h('td', null, inp('number', r.t, function (v) { r.t = v; }, { class: 't r-t', step: '0.1', min: '0', title: '秒' })));
         if (opt.rowExtra) tr.appendChild(h('td', { class: 'thumb-cell' }, opt.rowExtra(r)));
         opt.cols.forEach(function (c) {
+          if (c.options) {
+            tr.appendChild(h('td', null, h('select', { class: 'r-' + c.key, onchange: function (e) { r[c.key] = e.target.value; editScheduleSave(); } },
+              c.options.map(function (o) { return h('option', { value: o, text: o || '—', selected: (r[c.key] || '') === o }); }))));
+            return;
+          }
           tr.appendChild(h('td', null, inp('text', r[c.key], function (v) { r[c.key] = v; },
             { class: 'r-' + c.key, placeholder: c.ph || '', list: c.list || null })));
         });
@@ -246,9 +252,9 @@ function timeBar() {
     h('span', { class: 'lbl wide-only', text: '今の秒数' }), ti, h('span', { class: 'lbl', text: '秒' }),
     nudge(-1), nudge(-0.5), nudge(0.5), nudge(1),
     h('span', { class: 'spacer' }),
-    h('label', { class: 'cut-shot-toggle', title: 'カットを押したら動画を2秒止めて、また再生する（スクショを撮る時間）' },
+    h('label', { class: 'cut-shot-toggle', title: 'カットを押したら動画を画面いっぱいに拡大して3秒止め、元に戻して再生する（スクショを撮る時間）' },
       h('input', { type: 'checkbox', id: 'cut-pause', checked: App.state.prefs.cutPause !== false, onchange: function (e) { App.state.prefs.cutPause = e.target.checked; App.savePrefs(); } }),
-      '2秒停止'),
+      '3秒停止＋拡大'),
     canShareScreen() ? h('label', { class: 'cut-shot-toggle', title: 'カットを押した時に、同時にスクショも撮る（画面共有中のみ）' },
       h('input', { type: 'checkbox', id: 'cut-shot', checked: !!App.state.prefs.cutShot, onchange: function (e) { App.state.prefs.cutShot = e.target.checked; App.savePrefs(); } }),
       '📸連動') : null,
@@ -258,10 +264,10 @@ function timeBar() {
       editScheduleSave();
       redrawCuts();
       editRefreshDerived();
-      pauseForCut();
+      var big = pauseForCut();
       if (canShareScreen() && App.state.prefs.cutShot) {
         if (!isSharing()) { toast('📸連動を使うには、先に「📸 画面共有を開始」を押してください', true); return; }
-        captureShotAt(t).then(function () { redrawCuts(); });
+        setTimeout(function () { captureShotAt(t).then(function () { redrawCuts(); }); }, big ? 600 : 0);
       }
     } }, '✂ カット＋'));
 }
@@ -281,23 +287,55 @@ function captureShotAt(t) {
   }).catch(function (e) { toast(e.message, true); refreshShareUI(); });
 }
 
-// カットを押したら2秒止めて再生再開（スマホでスクショを撮る時間）
+// カットを押したら動画を大きくして3秒止め、元に戻して再生再開（スクショを撮る時間）
+var CUT_HOLD_MS = 3000;
 function pauseForCut() {
-  if (App.state.prefs.cutPause === false) return;
+  if (App.state.prefs.cutPause === false) return false;
+  var frame = document.getElementById('player-frame');
+  if (!frame) return false;
   var y = Player.yt;
-  if (!y || !y.getPlayerState || !y.pauseVideo) return;
-  var playing = y.getPlayerState() === 1;
-  if (!playing && !Player.pauseTimer) return;   // 元から止まっていたら何もしない
-  if (playing) y.pauseVideo();
+  var playing = !!(y && y.getPlayerState && y.getPlayerState() === 1);
+  var resume = playing || (Player.pauseTimer && Player.resumeAfter);
+  if (playing && y.pauseVideo) y.pauseVideo();
+  frame.classList.add('big');
+  document.body.classList.add('player-big');
   clearTimeout(Player.pauseTimer);
-  var st = document.getElementById('player-state');
-  if (st) st.textContent = '⏸ 2秒停止中（今のうちにスクショ）';
+  Player.resumeAfter = resume;
   Player.pauseTimer = setTimeout(function () {
     Player.pauseTimer = null;
-    if (Player.yt === y) { try { y.playVideo(); } catch (e) { /* noop */ } }
-    var st2 = document.getElementById('player-state');
-    if (st2) st2.textContent = '再生中の秒数が「今の秒数」に自動で入ります';
-  }, 2000);
+    frame.classList.remove('big');
+    document.body.classList.remove('player-big');
+    if (Player.resumeAfter && Player.yt === y && y) { try { y.playVideo(); } catch (e) { /* noop */ } }
+    Player.resumeAfter = false;
+  }, CUT_HOLD_MS);
+  return true;
+}
+
+function attachImageToCut(file, t) {
+  return imageFileToJpeg(file).then(function (img) {
+    var S = EditUI.draft; if (!S) return;
+    var sh = shotNear(t);
+    if (sh) sh.img = img; else S.shots.push({ id: uid(), img: img, t: t, notes: [] });
+    editScheduleSave(); redrawCuts();
+    var b = document.getElementById('box-shots'); if (b && b.redraw) b.redraw();
+    toast(t + '秒のカットにスクショを登録しました');
+  }).catch(function (e) { toast(e.message, true); });
+}
+
+function assignImagesToCuts(files) {
+  var list = Array.prototype.filter.call(files || [], function (f) { return /^image\//.test(f.type); })
+    .sort(function (a, b) { return (a.lastModified - b.lastModified) || a.name.localeCompare(b.name); });
+  var S = EditUI.draft;
+  if (!list.length || !S) return Promise.resolve();
+  var empty = S.cuts.map(function (c) { return Number(c.t) || 0; }).sort(function (a, b) { return a - b; }).filter(function (t) { return !shotNear(t); });
+  if (!empty.length) { toast('スクショが無いカットがありません', true); return Promise.resolve(); }
+  var n = Math.min(list.length, empty.length);
+  return Promise.all(list.slice(0, n).map(imageFileToJpeg)).then(function (imgs) {
+    imgs.forEach(function (img, i) { S.shots.push({ id: uid(), img: img, t: empty[i], notes: [] }); });
+    editScheduleSave(); redrawCuts();
+    var b = document.getElementById('box-shots'); if (b && b.redraw) b.redraw();
+    toast(n + '枚をカットに割り当てました' + (list.length > n ? '（余った' + (list.length - n) + '枚は入れていません）' : ''));
+  }).catch(function (e) { toast(e.message, true); });
 }
 
 function wait(ms) { return new Promise(function (r) { setTimeout(r, ms); }); }
@@ -348,17 +386,28 @@ function renderEdit(el) {
     id: 'box-cuts', key: 'cuts', title: 'カット', rowClass: 'cut-row', addId: 'add-cut-row', addLabel: '＋ 行を追加',
     badge: function () { return h('span', { class: 'count', id: 'cut-count', text: String(S.cuts.length) }); },
     sub: '「✂ カット＋」で今の秒数を記録', emptyHint: '動画を見ながら、画面が切り替わるたびに「✂ カット＋」を押してください。',
-    cols: [{ key: 'memo', label: 'カットのメモ', ph: '例：引き→寄り、ジャンプカット' }],
+    cols: [{ key: 'type', label: '種類', ph: '例：寄り', list: 'cut-types' }, { key: 'memo', label: 'カットのメモ', ph: '何が変わったか・ねらい' }],
+    lists: [datalist('cut-types', CUT_TYPES)],
     rowExtra: function (r) {
       var sh = shotNear(Number(r.t) || 0);
-      return sh ? h('img', { class: 'cut-thumb', src: sh.img, alt: '', onclick: function () { showOverlay(sh.img); } }) : null;
+      var fileIn = h('input', { type: 'file', accept: 'image/*', hidden: true, onchange: function () {
+        var f = fileIn.files[0]; if (!f) return;
+        attachImageToCut(f, Number(r.t) || 0);
+      } });
+      return h('div', { class: 'row', style: { flexWrap: 'nowrap', gap: '4px' } },
+        sh ? h('img', { class: 'cut-thumb', src: sh.img, alt: '', onclick: function () { showOverlay(sh.img); } }) : null,
+        h('button', { class: 'xbtn attach-shot', title: sh ? 'スクショを差し替え' : 'このカットにスクショを登録', onclick: function () { fileIn.click(); } }, sh ? '↻' : '🖼'),
+        fileIn);
     },
     extra: function () {
-      return canShareScreen() ? h('div', { class: 'row', style: { marginBottom: '8px' } },
-        h('button', { class: 'btn small', id: 'shoot-cuts', onclick: function (e) { shootAllCuts(e.currentTarget); } }, '📸 カット位置をまとめて撮影'),
-        h('span', { class: 'hint', style: { margin: 0 }, text: 'スクショが無いカットの位置へ自動で移動して撮ります（YouTube・画面共有中）' })) : null;
+      var multi = h('input', { type: 'file', accept: 'image/*', multiple: true, hidden: true, onchange: function () { assignImagesToCuts(multi.files); multi.value = ''; } });
+      return h('div', { class: 'row', style: { marginBottom: '8px' } },
+        h('button', { class: 'btn small', id: 'assign-cut-images', onclick: function () { multi.click(); } }, '🖼 スクショをカットに順番に割り当て'),
+        canShareScreen() ? h('button', { class: 'btn small', id: 'shoot-cuts', onclick: function (e) { shootAllCuts(e.currentTarget); } }, '📸 カット位置をまとめて撮影') : null,
+        multi,
+        h('span', { class: 'hint', style: { margin: 0, width: '100%' }, text: '「順番に割り当て」：選んだ画像を、スクショが無いカットへ時間順に入れます（iPhoneで撮った分をまとめて取り込む時に）' }));
     },
-    make: function () { return { t: Number(EditUI.curT) || 0, memo: '' }; }
+    make: function () { return { t: Number(EditUI.curT) || 0, type: '', memo: '' }; }
   }));
   right.appendChild(rowsBox({
     id: 'box-telops', key: 'telops', title: 'テロップ', rowClass: 'telop-row', addId: 'add-telop', addLabel: '＋ テロップを追加',
@@ -372,9 +421,11 @@ function renderEdit(el) {
   right.appendChild(rowsBox({
     id: 'box-ses', key: 'ses', title: 'SE（効果音）', rowClass: 'se-row', addId: 'add-se', addLabel: '＋ SEを追加',
     emptyHint: 'どこでどんな音が鳴ったかを記録します。',
-    cols: [{ key: 'kind', label: '種類', ph: '例：ドン', list: 'se-kinds' }, { key: 'memo', label: 'メモ', ph: '使いどころ・音量など' }],
+    cols: [{ key: 'kind', label: '種類', ph: '例：ドン', list: 'se-kinds' }, { key: 'scene', label: '使いどころ', ph: '例：オチの瞬間' },
+      { key: 'effect', label: '効果・印象', ph: '例：笑いが起きやすい' }, { key: 'owned', label: '手持ち', options: ['', '持ってる', '持ってない'] },
+      { key: 'memo', label: 'メモ', ph: '音量・入れるタイミングなど' }],
     lists: [datalist('se-kinds', SE_KINDS)],
-    make: function () { return { t: Number(EditUI.curT) || 0, kind: '', memo: '' }; }
+    make: function () { return { t: Number(EditUI.curT) || 0, kind: '', scene: '', effect: '', owned: '', memo: '' }; }
   }));
   right.appendChild(memosBox());
 
@@ -419,7 +470,8 @@ function loadYouTubeAPI(cb) {
 
 function destroyPlayer() {
   clearInterval(Player.poll); Player.poll = null;
-  clearTimeout(Player.pauseTimer); Player.pauseTimer = null;
+  clearTimeout(Player.pauseTimer); Player.pauseTimer = null; Player.resumeAfter = false;
+  document.body.classList.remove('player-big');
   if (Player.yt && Player.yt.destroy) { try { Player.yt.destroy(); } catch (e) { /* noop */ } }
   Player.yt = null; Player.site = null;
 }
