@@ -302,3 +302,99 @@ function createShort(kind) {
   return App.save(s).then(function (n) { App.go('edit', n.id); });
 }
 window.renderEdit = renderEdit;
+
+// ---- 動画の小窓とスクショ ----
+function refreshShareUI() {
+  var on = isSharing();
+  var st = document.getElementById('share-state');
+  if (st) { st.className = 'share-state' + (on ? ' on' : ''); st.textContent = on ? '● 画面共有中 — 📸で今のコマを保存' : (Capture.wasSharing ? '共有が止まりました' : '未共有'); }
+  var b = document.getElementById('shot-btn');
+  if (b) b.textContent = on ? '📸 スクショ' : (Capture.wasSharing ? '📸 共有をやり直す' : '📸 画面共有を開始');
+  var sb = document.getElementById('stop-share'); if (sb) sb.classList.toggle('hidden', !on);
+}
+onShareEnded(function () { refreshShareUI(); });
+
+function playerBox() {
+  var S = EditUI.draft;
+  return h('div', { class: 'box player-box' },
+    h('h3', null, '動画を見る・撮る'),
+    h('div', { class: 'row' },
+      h('button', { class: 'btn', id: 'open-player', onclick: function () {
+        if (!S.url) { toast('先にURLを入力してください', true); return; }
+        var w = window.open(S.url, 'shortPlayer', 'popup,width=440,height=800,left=40,top=40');
+        if (!w) {
+          toast('小窓がブロックされました。アドレスバー右の「ポップアップ」を許可してください', true);
+          var a = document.getElementById('player-fallback');
+          if (a) { a.href = S.url; a.classList.remove('hidden'); }
+        }
+      } }, '▶ 小窓で再生'),
+      h('a', { id: 'player-fallback', class: 'hidden', target: '_blank', rel: 'noopener', text: '新しいタブで開く' })),
+    h('div', { class: 'row' },
+      h('button', { class: 'btn primary shot-btn', id: 'shot-btn', onclick: takeShot }, '📸'),
+      h('button', { class: 'btn small ghost hidden', id: 'stop-share', onclick: function () { stopShare(); refreshShareUI(); } }, '共有を止める')),
+    h('div', { id: 'share-state', class: 'share-state' }),
+    h('p', { class: 'hint', text: '初回だけ、共有画面の「ウィンドウ」タブで動画の小窓を選んでください。撮った時の秒数は上の「今の秒数」が入ります（あとで直せます）。' }));
+}
+
+function takeShot() {
+  if (!isSharing()) {
+    startShare().then(function () { Capture.wasSharing = true; refreshShareUI(); toast('共有を開始しました。もう一度📸で撮影できます'); })
+      .catch(function (e) { if (e && e.name !== 'NotAllowedError') toast('画面共有を開始できませんでした: ' + e.message, true); refreshShareUI(); });
+    return;
+  }
+  grabFrame().then(function (img) {
+    var S = EditUI.draft;
+    if (!S) return;
+    S.shots.push({ id: uid(), img: img, t: Number(EditUI.curT) || 0, notes: [] });
+    editScheduleSave();
+    var b = document.getElementById('box-shots'); if (b && b.redraw) b.redraw();
+    toast('スクショを保存しました（' + (Number(EditUI.curT) || 0) + '秒）');
+  }).catch(function (e) { toast(e.message, true); refreshShareUI(); });
+}
+
+function showOverlay(src) {
+  var o = document.getElementById('overlay');
+  o.innerHTML = '';
+  o.appendChild(h('img', { src: src }));
+  o.classList.remove('hidden');
+  o.onclick = function () { o.classList.add('hidden'); o.innerHTML = ''; };
+}
+document.addEventListener('keydown', function (e) { if (e.key === 'Escape') { var o = document.getElementById('overlay'); if (o) o.click(); } });
+
+function shotsBox() {
+  var S = EditUI.draft;
+  var box = h('div', { class: 'box', id: 'box-shots' });
+  function draw() {
+    box.innerHTML = '';
+    S.shots.sort(function (a, b) { return (Number(a.t) || 0) - (Number(b.t) || 0); });
+    box.appendChild(h('h3', null, 'スクショ', h('span', { class: 'count', text: String(S.shots.length) }), h('span', { class: 'sub', text: '1枚ごとにメモをいくつでも' })));
+    if (!S.shots.length) { box.appendChild(h('p', { class: 'hint', text: '左の「📸」で、動画の今のコマを保存できます。' })); }
+    var grid = h('div', { class: 'shots' });
+    S.shots.forEach(function (sh, i) {
+      var notes = h('div');
+      sh.notes = sh.notes || [];
+      sh.notes.forEach(function (n, j) {
+        notes.appendChild(h('div', { class: 'note' },
+          inp('text', n.label, function (v) { n.label = v; }, { class: 'n-label', list: 'note-labels', placeholder: '項目' }),
+          h('span'),
+          h('button', { class: 'xbtn', title: 'メモを削除', onclick: function () { sh.notes.splice(j, 1); editScheduleSave(); draw(); } }, '×'),
+          h('textarea', { placeholder: 'メモ', oninput: function (e) { n.body = e.target.value; editScheduleSave(); } }, n.body || '')));
+      });
+      grid.appendChild(h('div', { class: 'shot' },
+        h('img', { src: sh.img, alt: 'スクショ ' + sh.t + '秒', onclick: function () { showOverlay(sh.img); } }),
+        h('div', { class: 'shot-body' },
+          h('div', { class: 'row', style: { flexWrap: 'nowrap' } },
+            inp('number', sh.t, function (v) { sh.t = v; }, { class: 't s-t', step: '0.1', min: '0', style: { width: '70px', textAlign: 'right' } }),
+            h('span', { class: 'hint', style: { margin: 0 }, text: '秒' }), h('span', { class: 'spacer' }),
+            h('button', { class: 'btn small ghost del-shot', onclick: function () { if (confirm('このスクショを削除しますか？')) { S.shots.splice(i, 1); editScheduleSave(); draw(); } } }, '削除')),
+          notes,
+          h('button', { class: 'btn small add-note', onclick: function () { sh.notes.push({ label: NOTE_LABELS[sh.notes.length % NOTE_LABELS.length], body: '' }); editScheduleSave(); draw(); } }, '＋ メモ'))));
+    });
+    box.appendChild(grid);
+    box.appendChild(datalist('note-labels', NOTE_LABELS));
+  }
+  draw();
+  box.redraw = draw;
+  setTimeout(refreshShareUI, 0);
+  return box;
+}

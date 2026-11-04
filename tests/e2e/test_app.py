@@ -124,3 +124,53 @@ def test_custom_block_type(page):
     page.wait_for_timeout(300)
     reload(page)
     assert '回収' in page.evaluate('App.state.blockTypes.map(b=>b.name)')
+
+
+# ---------- Task 6 ----------
+def test_capture_saves_shot(page):
+    sid = open_new(page, url='https://www.youtube.com/shorts/abc', duration=20)
+    page.fill('#cur-t', '4.5')
+    page.click('#shot-btn')            # 1回目：共有開始
+    page.wait_for_selector('#share-state.on')
+    assert page.locator('.shot').count() == 0
+    page.click('#shot-btn')            # 2回目：撮影
+    page.wait_for_selector('.shot img')
+    assert page.input_value('.shot .s-t') == '4.5'
+    page.click('.shot .add-note')
+    page.click('.shot .add-note')
+    page.locator('.shot .note textarea').nth(1).fill('右下に小さくロゴ')
+    page.wait_for_timeout(900)
+    reopen(page, sid)
+    dims = page.evaluate("""() => new Promise(r => { const i = new Image();
+        i.onload = () => r([i.naturalWidth, i.naturalHeight]); i.src = App.find('%s').shots[0].img; })""" % sid)
+    assert max(dims) <= 1080 and min(dims) > 0
+    assert page.locator('.shot .note').count() == 2
+    assert page.locator('.shot .note textarea').nth(1).input_value() == '右下に小さくロゴ'
+    assert page.evaluate("App.find('%s').shots[0].img.startsWith('data:image/jpeg')" % sid)
+
+
+def test_share_end_resets(page):
+    open_new(page)
+    page.click('#shot-btn')
+    page.wait_for_selector('#share-state.on')
+    page.evaluate("window.__fakeStream.getVideoTracks().forEach(t => { t.stop(); t.dispatchEvent(new Event('ended')); })")
+    page.wait_for_function("document.querySelector('#shot-btn').textContent.includes('共有をやり直す')")
+
+
+def test_shot_zoom_and_delete(page):
+    open_new(page)
+    page.click('#shot-btn'); page.wait_for_selector('#share-state.on')
+    page.click('#shot-btn'); page.wait_for_selector('.shot img')
+    page.click('.shot img')
+    assert page.is_visible('#overlay img')
+    page.click('#overlay')
+    assert not page.is_visible('#overlay')
+    page.on('dialog', lambda d: d.accept())
+    page.click('.shot .del-shot')
+    assert page.locator('.shot').count() == 0
+
+
+def test_open_player_without_url(page):
+    open_new(page)
+    page.click('#open-player')
+    page.wait_for_selector('.toast.error')
