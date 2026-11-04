@@ -37,7 +37,7 @@ function renderAnalyze(el) {
     var byViews = rows.slice().sort(function (a, b) { return (b.s.views || 0) - (a.s.views || 0); });
     var cmp = h('div', { class: 'compare' }, h('h3', { style: { margin: '0 0 8px', fontSize: '14.5px' }, text: '構成の比較（再生数の多い順）' }),
       h('div', { class: 'legend' }, App.state.blockTypes.map(function (bt) { return h('span', null, h('span', { class: 'swatch', style: { background: bt.color } }), bt.name); }),
-        h('span', null, h('span', { class: 'swatch', style: { background: '#1d1f24', width: '3px' } }), 'カット')));
+        h('span', null, h('span', { class: 'swatch', style: { background: '#fff', width: '3px', boxShadow: '0 0 0 1px #9db3d3' } }), 'カット')));
     byViews.slice(0, 40).forEach(function (r) {
       cmp.appendChild(h('div', { class: 'cmp-row' },
         h('div', { class: 't', title: r.s.title, onclick: function () { App.go('edit', r.s.id); }, text: r.s.title || '無題' }),

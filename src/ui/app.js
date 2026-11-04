@@ -54,6 +54,12 @@ var App = {
       st.templates = r[1];
       var bt = r[2].filter(function (x) { return x.id === 'blockTypes'; })[0];
       st.blockTypes = bt && bt.list && bt.list.length ? bt.list : DEFAULT_BLOCK_TYPES.slice();
+      // 旧デザインの初期色は新しい色に置き換える
+      var OLD = { '#e4572e': 0, '#f3a712': 1, '#4c9f70': 2, '#3d5a80': 3, '#9b5de5': 4 };
+      st.blockTypes = st.blockTypes.map(function (b) {
+        var i = OLD[String(b.color).toLowerCase()];
+        return i != null && DEFAULT_BLOCK_TYPES[i].name === b.name ? Object.assign({}, b, { color: DEFAULT_BLOCK_TYPES[i].color }) : b;
+      });
       var pr = r[2].filter(function (x) { return x.id === 'prefs'; })[0];
       st.prefs = pr || { id: 'prefs' };
     });
