@@ -143,8 +143,11 @@ td.thumb-cell { width: 36px; }
 .player-frame iframe, .player-frame #yt-holder { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; }
 
 /* カット時の拡大（スクショ用） */
-.player-frame.big { position: fixed !important; inset: 0 !important; z-index: 1000; width: 100vw !important; height: 100vh !important; height: 100dvh !important;
-  max-height: none !important; margin: 0 !important; border-radius: 0 !important; aspect-ratio: auto !important; background: #000; }
+.player-frame.big { position: fixed !important; z-index: 1000; inset: auto !important; left: 50% !important; top: 50% !important; transform: translate(-50%, -50%);
+  height: min(100vh, 100vw * 16 / 9) !important; height: min(100dvh, 100vw * 16 / 9) !important;
+  width: min(100vw, 100vh * 9 / 16) !important; width: min(100vw, 100dvh * 9 / 16) !important;
+  max-height: none !important; margin: 0 !important; border-radius: 0 !important; aspect-ratio: 9 / 16 !important; background: #000; }
+body.player-big::before { content: ''; position: fixed; inset: 0; background: #000; z-index: 999; }
 body.player-big { overflow: hidden; }
 body.player-big #toasts { display: none; }
 

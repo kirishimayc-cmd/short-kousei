@@ -522,3 +522,21 @@ def test_library_se_view(page):
     page.click('#tab-library .lib-item .lib-src')
     page.wait_for_selector('#f-title')
     assert page.input_value('#f-title') == '動画A'
+
+
+def test_big_mode_fits_whole_video(browser):
+    """拡大しても縦長9:16がまるごと画面内に収まる（見切れない）"""
+    for vw, vh in [(390, 664), (390, 844), (1280, 800)]:
+        ctx = browser.new_context(viewport={'width': vw, 'height': vh})
+        pg = ctx.new_page(); pg.set_default_timeout(5000)
+        pg.goto((__import__('pathlib').Path(__file__).resolve().parents[2] / 'dist' / 'short-kousei.html').as_uri())
+        pg.wait_for_function('window.App && App.ready')
+        pg.evaluate("()=>{const s=newShort('research');s.url='https://youtu.be/abcDEF12_-x';return App.save(s).then(n=>App.go('edit',n.id))}")
+        pg.wait_for_selector('#player-frame')
+        pg.click('#add-cut')
+        r = pg.evaluate("(()=>{const r=document.querySelector('#player-frame').getBoundingClientRect();return [r.left,r.top,r.right,r.bottom,r.width,r.height]})()")
+        l, t, rr, b, w, h = r
+        assert l >= -0.5 and t >= -0.5 and rr <= vw + 0.5 and b <= vh + 0.5, (vw, vh, r)
+        assert abs(w / h - 9 / 16) < 0.01, (vw, vh, r)
+        assert max(w / vw, h / vh) > 0.9, (vw, vh, r)   # ちゃんと大きい
+        ctx.close()
