@@ -213,15 +213,17 @@ table.grid tr:hover td { background: #fbf9f5; }
 /* ---- overlay & toast ---- */
 .overlay { position: fixed; inset: 0; z-index: 50; background: rgba(40,60,100,.78); display: flex; align-items: center; justify-content: center; cursor: zoom-out; }
 .overlay img { max-width: 92vw; max-height: 92vh; border-radius: 8px; }
-#toasts { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); z-index: 60; display: flex; flex-direction: column; gap: 8px; align-items: center; }
-.toast { background: var(--accent-deep); color: #fff; padding: 9px 20px; border-radius: 99px; font-weight: 700; box-shadow: 0 6px 20px rgba(0,0,0,.2); transition: opacity .5s; max-width: 80vw; }
+#toasts { position: fixed; bottom: calc(20px + env(safe-area-inset-bottom)); width: min(92vw, 520px); left: 50%; transform: translateX(-50%); z-index: 60; display: flex; flex-direction: column; gap: 8px; align-items: center; }
+.toast { background: var(--accent-deep); color: #fff; padding: 10px 18px; border-radius: 16px; font-weight: 700; font-size: 13px; line-height: 1.5; box-shadow: 0 6px 20px rgba(0,0,0,.2); transition: opacity .5s; max-width: 80vw; }
 .toast.error { background: var(--danger); }
 .toast.out { opacity: 0; }
 
 @media (max-width: 900px) {
   .topbar { gap: 8px; padding: 0 10px; height: auto; min-height: 54px; flex-wrap: wrap; }
   .brand { font-size: 13px; }
-  nav button { padding: 8px 10px; }
+  nav { order: 3; flex: 1 0 100%; overflow-x: auto; flex-wrap: nowrap; padding-bottom: 6px; -webkit-overflow-scrolling: touch; }
+  nav button { padding: 7px 12px; white-space: nowrap; flex: none; }
+  .icon-btn { margin-left: auto; padding: 4px 10px; font-size: 12px; }
   main { padding: 14px 10px 80px; }
   .player-frame { max-height: 62vh; }
   table.rows { display: block; overflow-x: auto; }
@@ -498,12 +500,30 @@ function openDB() {
         if (!db.objectStoreNames.contains(n)) db.createObjectStore(n, { keyPath: 'id' });
       });
     };
-    r.onsuccess = function () { _db = r.result; res(_db); };
+    r.onsuccess = function () {
+      var db = r.result;
+      // iPhone はアプリ切り替え等で接続を閉じることがある → 次回開き直す
+      db.onclose = function () { if (_db === db) _db = null; };
+      db.onversionchange = function () { db.close(); if (_db === db) _db = null; };
+      _db = db; res(db);
+    };
     r.onerror = function () { rej(r.error); };
   });
 }
 
-function _tx(store, mode, fn) {
+function _tx(store, mode, fn, retried) {
+  return _txOnce(store, mode, fn).catch(function (e) {
+    // 接続が閉じていた（InvalidStateError 等）なら、開き直して1回だけやり直す
+    if (!retried && e && (e.name === 'InvalidStateError' || e.name === 'TransactionInactiveError' || e.name === 'UnknownError')) {
+      try { if (_db) _db.close(); } catch (x) { /* noop */ }
+      _db = null;
+      return _tx(store, mode, fn, true);
+    }
+    throw e;
+  });
+}
+
+function _txOnce(store, mode, fn) {
   return openDB().then(function (db) {
     return new Promise(function (res, rej) {
       var t = db.transaction(store, mode);
@@ -528,6 +548,12 @@ function clearAll() {
       t.onerror = function () { rej(t.error); };
     });
   });
+}
+
+// ブラウザに「消さないで」とお願いする（iPhone で勝手に消されにくくする）
+function requestPersist() {
+  try { if (navigator.storage && navigator.storage.persist) return navigator.storage.persist().catch(function () { return false; }); } catch (e) { /* noop */ }
+  return Promise.resolve(false);
 }
 
 // ===== capture.js : 画面共有と撮影 =====
@@ -1629,6 +1655,9 @@ function h(tag, attrs) {
 }
 
 function toast(msg, isError) {
+  // 同じメッセージが表示中なら重ねない
+  var dup = Array.prototype.filter.call(document.querySelectorAll('#toasts .toast'), function (x) { return x.textContent === msg && !x.classList.contains('out'); })[0];
+  if (dup) return;
   var t = h('div', { class: 'toast' + (isError ? ' error' : ''), text: msg });
   document.getElementById('toasts').appendChild(t);
   setTimeout(function () { t.classList.add('out'); }, isError ? 5000 : 2200);
@@ -1650,6 +1679,7 @@ var App = {
       b.addEventListener('click', function () { self.go(b.dataset.tab); });
     });
     this.initSettings();
+    requestPersist();
     return this.load().then(function () { self.go('list'); self.ready = true; })
       .catch(function (e) { toast('データを開けませんでした: ' + e.message, true); });
   },
@@ -1680,7 +1710,9 @@ var App = {
     var arr = this.state.shorts, i = arr.findIndex(function (x) { return x.id === n.id; });
     if (i >= 0) arr[i] = n; else arr.push(n);
     return put('shorts', n).then(function () { return n; }, function (e) {
-      toast('保存できませんでした（' + (e && (e.name || e.message)) + '）。容量不足の場合はスクショを減らすか、バックアップを書き出してください', true);
+      toast(e && e.name === 'QuotaExceededError'
+        ? '保存できませんでした（容量がいっぱいです）。スクショを減らすか、バックアップを書き出してください'
+        : '保存できませんでした（' + (e && (e.name || e.message)) + '）。ページを再読み込みしてから、もう一度試してください', true);
       throw e;
     });
   },
