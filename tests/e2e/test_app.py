@@ -577,3 +577,12 @@ def test_same_error_toast_not_stacked(page):
     for ch in 'abc':
         page.fill('#f-title', ch); page.wait_for_timeout(600)
     assert page.locator('.toast.error').count() == 1
+
+
+def test_library_screenshots_are_big(page):
+    img = 'data:image/png;base64,' + __import__('base64').b64encode(PNG).decode()
+    page.evaluate(SEED, [{'kind': 'research', 'title': 'A', 'ses': [{'t': 1, 'kind': 'ドン'}],
+                          'shots': [{'id': 's', 'img': img, 't': 1, 'notes': []}]}])
+    page.click('nav [data-tab=library]')
+    w = page.evaluate("document.querySelector('#tab-library .lib-item img').getBoundingClientRect().width")
+    assert w >= 140, w
