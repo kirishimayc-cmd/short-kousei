@@ -699,3 +699,33 @@ def test_slow_playback_speed(page):
     page.click('#add-cut')
     page.wait_for_timeout(3300)
     assert page.evaluate('__yt.log') == ['rate:0.5', 'rate:0.25', 'seek:5', 'rate:0.5']
+
+
+# ---------- スクショの選択削除・全削除 ----------
+def _three_shots(page):
+    return open_new(page, shots=[{'id': k, 'img': _img(), 't': i, 'notes': []} for i, k in enumerate('abc')])
+
+
+def test_select_and_delete_screenshots(page):
+    sid = _three_shots(page)
+    page.click('#shots-select')
+    page.locator('.shot .shot-check').nth(0).check()
+    page.locator('.shot .shot-check').nth(2).check()
+    assert '2' in page.inner_text('#shots-delete-selected')
+    page.once('dialog', lambda d: d.accept())
+    page.click('#shots-delete-selected')
+    assert page.locator('.shot').count() == 1
+    assert page.input_value('.shot .s-t') == '1'
+    page.wait_for_timeout(800)
+    reopen(page, sid)
+    assert page.locator('.shot').count() == 1
+
+
+def test_delete_all_screenshots(page):
+    _three_shots(page)
+    page.once('dialog', lambda d: d.dismiss())
+    page.click('#shots-delete-all')
+    assert page.locator('.shot').count() == 3
+    page.once('dialog', lambda d: d.accept())
+    page.click('#shots-delete-all')
+    assert page.locator('.shot').count() == 0

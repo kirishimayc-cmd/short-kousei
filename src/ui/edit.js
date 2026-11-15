@@ -780,7 +780,30 @@ function shotsBox() {
   function draw() {
     box.innerHTML = '';
     S.shots.sort(function (a, b) { return (Number(a.t) || 0) - (Number(b.t) || 0); });
-    box.appendChild(h('h3', null, 'スクショ', h('span', { class: 'count', text: String(S.shots.length) }), h('span', { class: 'sub', text: '1枚ごとにメモをいくつでも' })));
+    var sel = EditUI.shotSel || (EditUI.shotSel = {});
+    var selecting = !!EditUI.shotSelecting;
+    var nSel = S.shots.filter(function (x) { return sel[x.id]; }).length;
+    function afterDelete(msg) {
+      EditUI.shotSel = {}; EditUI.shotSelecting = false;
+      editScheduleSave(); draw(); redrawCuts(); toast(msg);
+    }
+    box.appendChild(h('h3', null, 'スクショ', h('span', { class: 'count', text: String(S.shots.length) }), h('span', { class: 'sub', text: '1枚ごとにメモをいくつでも' }),
+      h('span', { class: 'spacer' }),
+      S.shots.length ? h('button', { class: 'btn small ghost', id: 'shots-select', onclick: function () { EditUI.shotSelecting = !selecting; EditUI.shotSel = {}; draw(); } }, selecting ? '選択をやめる' : '選んで削除') : null,
+      selecting ? h('button', { class: 'btn small danger-outline', id: 'shots-delete-selected', disabled: !nSel, onclick: function () {
+        if (!nSel || !confirm('選んだスクショ' + nSel + '枚を削除します。よろしいですか？')) return;
+        S.shots = S.shots.filter(function (x) { return !sel[x.id]; });
+        afterDelete(nSel + '枚削除しました');
+      } }, '選んだ' + nSel + '枚を削除') : null,
+      S.shots.length ? h('button', { class: 'btn small ghost danger', id: 'shots-delete-all', onclick: function () {
+        if (!confirm('このショートのスクショを全部（' + S.shots.length + '枚）削除します。元に戻せません。よろしいですか？')) return;
+        var n = S.shots.length; S.shots = [];
+        afterDelete(n + '枚すべて削除しました');
+      } }, '全部削除') : null));
+    if (selecting) box.appendChild(h('div', { class: 'row', style: { marginBottom: '8px' } },
+      h('button', { class: 'btn small', onclick: function () { S.shots.forEach(function (x) { sel[x.id] = true; }); draw(); } }, 'すべて選ぶ'),
+      h('button', { class: 'btn small', onclick: function () { EditUI.shotSel = {}; draw(); } }, '選択を解除'),
+      h('span', { class: 'hint', style: { margin: 0 }, text: '画像をタップしても選べます' })));
     if (!S.shots.length) { box.appendChild(h('p', { class: 'hint', text: '左の「📸」で、動画の今のコマを保存できます。' })); }
     var grid = h('div', { class: 'shots' });
     S.shots.forEach(function (sh, i) {
@@ -793,8 +816,10 @@ function shotsBox() {
           h('button', { class: 'xbtn', title: 'メモを削除', onclick: function () { sh.notes.splice(j, 1); editScheduleSave(); draw(); } }, '×'),
           h('textarea', { placeholder: 'メモ', oninput: function (e) { n.body = e.target.value; editScheduleSave(); } }, n.body || '')));
       });
-      grid.appendChild(h('div', { class: 'shot' },
-        h('img', { src: sh.img, alt: 'スクショ ' + sh.t + '秒', onclick: function () { showOverlay(sh.img); } }),
+      var picked = !!sel[sh.id];
+      grid.appendChild(h('div', { class: 'shot' + (selecting ? ' selecting' : '') + (picked ? ' picked' : '') },
+        selecting ? h('input', { type: 'checkbox', class: 'shot-check', checked: picked, onchange: function (e) { sel[sh.id] = e.target.checked; draw(); } }) : null,
+        h('img', { src: sh.img, alt: 'スクショ ' + sh.t + '秒', onclick: function () { if (selecting) { sel[sh.id] = !sel[sh.id]; draw(); } else showOverlay(sh.img); } }),
         h('div', { class: 'shot-body' },
           h('div', { class: 'row', style: { flexWrap: 'nowrap' } },
             inp('number', sh.t, function (v) { sh.t = v; }, { class: 't s-t', step: '0.1', min: '0', style: { width: '70px', textAlign: 'right' } }),
