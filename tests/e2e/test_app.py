@@ -391,11 +391,28 @@ def test_cut_with_screenshot(page):
     assert page.is_checked('#cut-shot')
 
 
-def test_cut_shot_without_share_warns(page):
-    open_new(page)
-    page.check('#cut-shot')
+def test_pc_cut_registers_screenshot_by_default(page):
+    """PC：カットを押すだけでスクショも登録（初回は自動で画面共有を開始）"""
+    open_new(page, duration=20, url='https://youtu.be/abcDEF12_-x')
+    page.wait_for_selector('#player-frame')
+    assert page.is_checked('#cut-shot')
+    page.fill('#cur-t', '3.5')
     page.click('#add-cut')
-    page.wait_for_selector('.toast.error')
+    page.wait_for_selector('#share-state.on')
+    page.wait_for_function("document.querySelectorAll('.shot').length === 1", timeout=8000)
+    assert page.input_value('.shot .s-t') == '3.5'
+    page.fill('#cur-t', '6')
+    page.click('#add-cut')
+    page.wait_for_function("document.querySelectorAll('.shot').length === 2", timeout=8000)
+    assert page.locator('.cut-row .cut-thumb').count() == 2
+
+
+def test_cut_shot_off_takes_no_screenshot(page):
+    open_new(page)
+    page.uncheck('#cut-shot')
+    page.click('#add-cut')
+    page.wait_for_timeout(800)
+    assert page.locator('.shot').count() == 0
     assert page.inner_text('#cut-count') == '1'
 
 
@@ -533,6 +550,7 @@ def test_big_mode_fits_whole_video(browser):
         pg.wait_for_function('window.App && App.ready')
         pg.evaluate("()=>{const s=newShort('research');s.url='https://youtu.be/abcDEF12_-x';return App.save(s).then(n=>App.go('edit',n.id))}")
         pg.wait_for_selector('#player-frame')
+        pg.uncheck('#cut-shot')
         pg.click('#add-cut')
         r = pg.evaluate("(()=>{const r=document.querySelector('#player-frame').getBoundingClientRect();return [r.left,r.top,r.right,r.bottom,r.width,r.height]})()")
         l, t, rr, b, w, h = r

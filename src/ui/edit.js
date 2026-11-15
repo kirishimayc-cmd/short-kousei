@@ -255,8 +255,8 @@ function timeBar() {
     h('label', { class: 'cut-shot-toggle', title: 'カットを押したら動画を画面いっぱいに拡大して3秒止め、元に戻して再生する（スクショを撮る時間）' },
       h('input', { type: 'checkbox', id: 'cut-pause', checked: App.state.prefs.cutPause !== false, onchange: function (e) { App.state.prefs.cutPause = e.target.checked; App.savePrefs(); } }),
       '3秒停止＋拡大'),
-    canShareScreen() ? h('label', { class: 'cut-shot-toggle', title: 'カットを押した時に、同時にスクショも撮る（画面共有中のみ）' },
-      h('input', { type: 'checkbox', id: 'cut-shot', checked: !!App.state.prefs.cutShot, onchange: function (e) { App.state.prefs.cutShot = e.target.checked; App.savePrefs(); } }),
+    canShareScreen() ? h('label', { class: 'cut-shot-toggle', title: 'カットを押した時に、同時にスクショも登録する（初回だけ画面共有の確認が出ます）' },
+      h('input', { type: 'checkbox', id: 'cut-shot', checked: App.state.prefs.cutShot !== false, onchange: function (e) { App.state.prefs.cutShot = e.target.checked; App.savePrefs(); } }),
       '📸連動') : null,
     h('button', { class: 'btn primary', id: 'add-cut', title: '今の秒数でカットを追加', onclick: function () {
       var t = Number(EditUI.curT) || 0;
@@ -264,11 +264,29 @@ function timeBar() {
       editScheduleSave();
       redrawCuts();
       editRefreshDerived();
-      var big = pauseForCut();
-      if (canShareScreen() && App.state.prefs.cutShot) {
-        if (!isSharing()) { toast('📸連動を使うには、先に「📸 画面共有を開始」を押してください', true); return; }
+      var wantShot = canShareScreen() && App.state.prefs.cutShot !== false;
+      if (!wantShot) { pauseForCut(); return; }
+      if (isSharing()) {
+        var big = pauseForCut();
         setTimeout(function () { captureShotAt(t).then(function () { redrawCuts(); }); }, big ? 600 : 0);
+        return;
       }
+      // 初回：このクリックで画面共有を開始してから、拡大して撮る
+      var y = Player.yt;
+      if (App.state.prefs.cutPause !== false && y && y.getPlayerState && y.getPlayerState() === 1 && y.pauseVideo) { try { y.pauseVideo(); } catch (e) { /* noop */ } Player.resumeAfter = true; }
+      toast('共有の確認で「このタブ」を選んでください。以降はカットを押すだけで撮れます');
+      startShare().then(function () {
+        Capture.wasSharing = true; refreshShareUI();
+        var resume = Player.resumeAfter;
+        var big2 = pauseForCut();
+        Player.resumeAfter = Player.resumeAfter || resume;
+        setTimeout(function () { captureShotAt(t).then(function () { redrawCuts(); }); }, big2 ? 600 : 0);
+      }).catch(function (e) {
+        refreshShareUI();
+        if (Player.resumeAfter && Player.yt) { try { Player.yt.playVideo(); } catch (x) { /* noop */ } Player.resumeAfter = false; }
+        if (!e || e.name !== 'NotAllowedError') toast('画面共有を開始できませんでした: ' + (e && e.message), true);
+        else toast('画面共有が許可されなかったので、スクショは撮っていません（カットは記録しました）', true);
+      });
     } }, '✂ カット＋'));
 }
 
