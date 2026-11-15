@@ -586,3 +586,42 @@ def test_library_screenshots_are_big(page):
     page.click('nav [data-tab=library]')
     w = page.evaluate("document.querySelector('#tab-library .lib-item img').getBoundingClientRect().width")
     assert w >= 140, w
+
+
+# ---------- 構成をスクショ・カットから自動で作る ----------
+def _img():
+    return 'data:image/png;base64,' + __import__('base64').b64encode(PNG).decode()
+
+
+def _blocks(page):
+    return page.evaluate("[...document.querySelectorAll('.block-row')].map(r=>[r.querySelector('.b-type').value, +r.querySelector('.b-start').value, +r.querySelector('.b-end').value])")
+
+
+def test_auto_blocks_from_screenshots(page):
+    sid = open_new(page, duration=30, shots=[{'id': 'a', 'img': _img(), 't': 0, 'notes': []},
+                                             {'id': 'b', 'img': _img(), 't': 4, 'notes': []},
+                                             {'id': 'c', 'img': _img(), 't': 20, 'notes': []}])
+    shots = page.locator('.shot')
+    shots.nth(0).locator('.chip[data-type="フック"]').click()
+    shots.nth(1).locator('.chip[data-type="展開"]').click()
+    shots.nth(2).locator('.chip[data-type="オチ"]').click()
+    assert _blocks(page) == [['フック', 0, 4], ['展開', 4, 20], ['オチ', 20, 30]]
+    assert 'on' in shots.nth(1).locator('.chip[data-type="展開"]').get_attribute('class')
+    page.wait_for_timeout(800)
+    reopen(page, sid)
+    assert _blocks(page) == [['フック', 0, 4], ['展開', 4, 20], ['オチ', 20, 30]]
+
+
+def test_auto_blocks_from_cut_rows_syncs_shot(page):
+    open_new(page, duration=30, cuts=[{'t': 0}, {'t': 10}], shots=[{'id': 'b', 'img': _img(), 't': 10, 'notes': []}])
+    page.locator('.cut-row .r-block').nth(0).select_option('フック')
+    page.locator('.cut-row .r-block').nth(1).select_option('オチ')
+    assert _blocks(page) == [['フック', 0, 10], ['オチ', 10, 30]]
+    assert 'on' in page.locator('.shot .chip[data-type="オチ"]').get_attribute('class')
+
+
+def test_auto_blocks_off_keeps_manual(page):
+    open_new(page, duration=30, cuts=[{'t': 0}], blocks=[{'type': '展開', 'start': 0, 'end': 30}])
+    page.uncheck('#auto-blocks')
+    page.locator('.cut-row .r-block').nth(0).select_option('フック')
+    assert _blocks(page) == [['展開', 0, 30]]

@@ -80,6 +80,32 @@ function shortFromTemplate(t, duration) {
   return s;
 }
 
+// カット・スクショに付けた「構成」ラベル → 時刻順の印
+function marksOf(s) {
+  var byT = {};
+  (s.cuts || []).forEach(function (c) { if (c.block) byT[num(c.t).toFixed(2)] = { t: num(c.t), type: c.block }; });
+  (s.shots || []).forEach(function (sh) { if (sh.block) byT[num(sh.t).toFixed(2)] = { t: num(sh.t), type: sh.block }; });
+  return Object.keys(byT).map(function (k) { return byT[k]; }).sort(function (a, b) { return a.t - b.t; });
+}
+
+// 印から構成ブロックを作る（同じ種類が続いたらまとめる。最初は0秒から、最後は尺まで）
+function buildBlocks(marks, duration, oldBlocks) {
+  var ms = (marks || []).filter(function (m) { return m && m.type; }).slice().sort(function (a, b) { return num(a.t) - num(b.t); });
+  if (!ms.length) return null;
+  var merged = [];
+  ms.forEach(function (m) { if (!merged.length || merged[merged.length - 1].type !== m.type) merged.push({ type: m.type, t: num(m.t) }); });
+  var d = num(duration);
+  var olds = (oldBlocks || []).slice();
+  return merged.map(function (m, i) {
+    var start = i === 0 ? 0 : m.t;
+    var end = i + 1 < merged.length ? merged[i + 1].t : (d > 0 ? Math.max(d, start) : start);
+    var old = olds.filter(function (b) { return b.type === m.type && b.memo; })
+      .sort(function (a, b) { return Math.abs(num(a.start) - start) - Math.abs(num(b.start) - start); })[0];
+    if (old) olds.splice(olds.indexOf(old), 1);
+    return { type: m.type, start: start, end: end, memo: old ? old.memo : '' };
+  });
+}
+
 // 動画URL → アプリに取られにくい埋め込み専用の再生URL
 function playerUrl(raw) {
   var u = String(raw || '').trim();
@@ -98,7 +124,7 @@ function playerUrl(raw) {
   return { site: 'other', url: u };
 }
 
-if (typeof module !== 'undefined') module.exports = { playerUrl: playerUrl,
+if (typeof module !== 'undefined') module.exports = { playerUrl: playerUrl, marksOf: marksOf, buildBlocks: buildBlocks,
   DEFAULT_BLOCK_TYPES: DEFAULT_BLOCK_TYPES, KIND_LABELS: KIND_LABELS, uid: uid, num: num,
   newShort: newShort, normalizeShort: normalizeShort,
   templateFromShort: templateFromShort, shortFromTemplate: shortFromTemplate

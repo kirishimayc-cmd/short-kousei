@@ -184,6 +184,17 @@ body.player-big #toasts { display: none; }
 .owned-no { color: var(--danger); font-weight: 700; }
 .owned-yes { color: var(--ok); font-weight: 700; }
 
+/* 構成ラベル */
+.shot-blocks { display: flex; flex-wrap: wrap; gap: 4px; }
+.chip { border: 1.5px solid; background: #fff; border-radius: 99px; padding: 2px 9px; font-size: 12px; font-weight: 700; cursor: pointer; }
+.chip.on { box-shadow: 0 2px 6px rgba(0,0,0,.15); }
+.auto-row { display: flex; flex-wrap: wrap; gap: 6px 12px; align-items: center; margin-top: 10px; }
+.auto-toggle { display: inline-flex; gap: 6px; align-items: center; font-weight: 700; font-size: 13px; cursor: pointer; }
+.auto-toggle input { accent-color: var(--accent-deep); }
+.manual-add { margin-top: 10px; }
+.manual-add > summary { cursor: pointer; font-size: 12.5px; color: var(--ink2); margin-bottom: 8px; }
+select.r-block { min-width: 86px; }
+
 /* ---- templates ---- */
 .tpl { background: var(--card); border: 1px solid #fff; box-shadow: 0 4px 14px rgba(90,140,200,.09); border-radius: var(--radius); padding: 14px; margin-bottom: 12px; }
 .tpl .head { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
@@ -377,6 +388,32 @@ function shortFromTemplate(t, duration) {
   return s;
 }
 
+// カット・スクショに付けた「構成」ラベル → 時刻順の印
+function marksOf(s) {
+  var byT = {};
+  (s.cuts || []).forEach(function (c) { if (c.block) byT[num(c.t).toFixed(2)] = { t: num(c.t), type: c.block }; });
+  (s.shots || []).forEach(function (sh) { if (sh.block) byT[num(sh.t).toFixed(2)] = { t: num(sh.t), type: sh.block }; });
+  return Object.keys(byT).map(function (k) { return byT[k]; }).sort(function (a, b) { return a.t - b.t; });
+}
+
+// 印から構成ブロックを作る（同じ種類が続いたらまとめる。最初は0秒から、最後は尺まで）
+function buildBlocks(marks, duration, oldBlocks) {
+  var ms = (marks || []).filter(function (m) { return m && m.type; }).slice().sort(function (a, b) { return num(a.t) - num(b.t); });
+  if (!ms.length) return null;
+  var merged = [];
+  ms.forEach(function (m) { if (!merged.length || merged[merged.length - 1].type !== m.type) merged.push({ type: m.type, t: num(m.t) }); });
+  var d = num(duration);
+  var olds = (oldBlocks || []).slice();
+  return merged.map(function (m, i) {
+    var start = i === 0 ? 0 : m.t;
+    var end = i + 1 < merged.length ? merged[i + 1].t : (d > 0 ? Math.max(d, start) : start);
+    var old = olds.filter(function (b) { return b.type === m.type && b.memo; })
+      .sort(function (a, b) { return Math.abs(num(a.start) - start) - Math.abs(num(b.start) - start); })[0];
+    if (old) olds.splice(olds.indexOf(old), 1);
+    return { type: m.type, start: start, end: end, memo: old ? old.memo : '' };
+  });
+}
+
 // 動画URL → アプリに取られにくい埋め込み専用の再生URL
 function playerUrl(raw) {
   var u = String(raw || '').trim();
@@ -395,7 +432,7 @@ function playerUrl(raw) {
   return { site: 'other', url: u };
 }
 
-if (typeof module !== 'undefined') module.exports = { playerUrl: playerUrl,
+if (typeof module !== 'undefined') module.exports = { playerUrl: playerUrl, marksOf: marksOf, buildBlocks: buildBlocks,
   DEFAULT_BLOCK_TYPES: DEFAULT_BLOCK_TYPES, KIND_LABELS: KIND_LABELS, uid: uid, num: num,
   newShort: newShort, normalizeShort: normalizeShort,
   templateFromShort: templateFromShort, shortFromTemplate: shortFromTemplate
@@ -703,6 +740,10 @@ var CUT_TYPES = ['寄り', '引き', 'ジャンプカット', '場面転換', '�
 function editScheduleSave() {
   clearTimeout(EditUI.saveTimer);
   EditUI.saveTimer = setTimeout(editSaveNow, 500);
+  if (EditUI.draft) {
+    var sig = blocksSig(EditUI.draft);
+    if (sig !== EditUI.lastSig) { EditUI.lastSig = sig; autoBuildBlocks(); }
+  }
   editRefreshDerived();
 }
 function editSaveNow() {
@@ -765,8 +806,16 @@ function rowsBox(opt) {
         if (opt.rowExtra) tr.appendChild(h('td', { class: 'thumb-cell' }, opt.rowExtra(r)));
         opt.cols.forEach(function (c) {
           if (c.options) {
-            tr.appendChild(h('td', null, h('select', { class: 'r-' + c.key, onchange: function (e) { r[c.key] = e.target.value; editScheduleSave(); } },
-              c.options.map(function (o) { return h('option', { value: o, text: o || '—', selected: (r[c.key] || '') === o }); }))));
+            var opts = typeof c.options === 'function' ? c.options() : c.options;
+            if (r[c.key] && opts.indexOf(r[c.key]) < 0) opts = opts.concat([r[c.key]]);
+            var sel = h('select', { class: 'r-' + c.key, onchange: function (e) {
+              r[c.key] = e.target.value;
+              if (c.color) sel.style.cssText = c.color(e.target.value);
+              if (c.onchange) c.onchange(r, e.target.value);
+              editScheduleSave();
+            } }, opts.map(function (o) { return h('option', { value: o, text: o || (c.empty || '—'), selected: (r[c.key] || '') === o }); }));
+            if (c.color) sel.style.cssText = c.color(r[c.key] || '');
+            tr.appendChild(h('td', null, sel));
             return;
           }
           tr.appendChild(h('td', null, inp('text', r[c.key], function (v) { r[c.key] = v; },
@@ -795,11 +844,21 @@ function blocksBox() {
   var box = h('div', { class: 'box', id: 'box-blocks' });
   function draw() {
     box.innerHTML = '';
-    box.appendChild(h('h3', null, '構成', h('span', { class: 'sub', text: 'ボタン＝直前のブロックの終わり〜今の秒数を追加' }),
+    var autoOn = S.autoBlocks !== false && marksOf(S).length > 0;
+    box.appendChild(h('h3', null, '構成', h('span', { class: 'sub', text: autoOn ? 'スクショ・カットの構成から自動作成' : 'ボタン＝直前のブロックの終わり〜今の秒数を追加' }),
       h('span', { class: 'spacer' }),
       h('button', { class: 'btn small ghost', id: 'manage-types', onclick: function () { EditUI.showTypes = !EditUI.showTypes; draw(); } }, EditUI.showTypes ? '閉じる' : 'ブロックの種類を編集')));
     box.appendChild(h('div', { id: 'edit-band' }));
     box.appendChild(h('div', { class: 'stats-inline', id: 'edit-stats' }));
+    var auto = S.autoBlocks !== false;
+    var hasMarks = marksOf(S).length > 0;
+    box.appendChild(h('div', { class: 'auto-row' },
+      h('label', { class: 'auto-toggle' }, h('input', { type: 'checkbox', id: 'auto-blocks', checked: auto, onchange: function (e) {
+        S.autoBlocks = e.target.checked; if (S.autoBlocks) autoBuildBlocks(); editScheduleSave(); draw();
+      } }), 'スクショ・カットの「構成」から自動で作る'),
+      h('span', { class: 'hint', style: { margin: 0 }, text: auto
+        ? (hasMarks ? '自動で作成中：スクショの色ボタンか、カット欄の「構成」を変えると更新されます' : 'スクショの「フック」「展開」…ボタンか、カット欄の「構成」を選ぶと自動でできます')
+        : '手動モード：下のボタンでブロックを追加します' })));
     var btns = h('div', { class: 'blockbtns', style: { marginTop: '12px' } });
     App.state.blockTypes.forEach(function (bt) {
       btns.appendChild(h('button', { class: 'blockbtn', 'data-type': bt.name, style: { background: bt.color }, onclick: function () {
@@ -809,7 +868,8 @@ function blocksBox() {
         editScheduleSave(); draw();
       } }, '＋' + bt.name));
     });
-    box.appendChild(btns);
+    if (auto && hasMarks) box.appendChild(h('details', { class: 'manual-add' }, h('summary', { text: '手動でブロックを追加' }), btns));
+    else box.appendChild(btns);
     if (EditUI.showTypes) box.appendChild(typesManager(draw));
     S.blocks.sort(function (a, b) { return (Number(a.start) || 0) - (Number(b.start) || 0); });
     if (S.blocks.length) {
@@ -831,6 +891,7 @@ function blocksBox() {
     editRefreshDerived();
   }
   draw();
+  box.redraw = draw;
   return box;
 }
 
@@ -1022,6 +1083,33 @@ function pauseForCut() {
   return true;
 }
 
+function blockSelectStyle(v) {
+  return v ? 'background:' + App.blockColor(v) + ';color:#fff;font-weight:700;border-color:transparent' : '';
+}
+
+function blocksSig(S) { return JSON.stringify(marksOf(S)) + '|' + (Number(S.duration) || 0); }
+
+// カット・スクショの「構成」ラベルから構成ブロックを作り直す
+function autoBuildBlocks() {
+  var S = EditUI.draft;
+  if (!S || S.autoBlocks === false) return false;
+  var b = buildBlocks(marksOf(S), S.duration, S.blocks);
+  if (!b) return false;
+  S.blocks = b;
+  var bb = document.getElementById('box-blocks'); if (bb && bb.redraw) bb.redraw();
+  return true;
+}
+
+// t秒のカットとスクショに同じ構成ラベルを付ける
+function setBlockAt(t, type, from) {
+  var S = EditUI.draft; if (!S) return;
+  S.cuts.forEach(function (c) { if (Math.abs((Number(c.t) || 0) - t) < 0.05) c.block = type; });
+  S.shots.forEach(function (sh) { if (Math.abs((Number(sh.t) || 0) - t) < 0.05) sh.block = type; });
+  editScheduleSave();
+  if (from !== 'cut') redrawCuts();
+  if (from !== 'shot') { var b = document.getElementById('box-shots'); if (b && b.redraw) b.redraw(); }
+}
+
 function attachImageToCut(file, t) {
   return imageFileToJpeg(file).then(function (img) {
     var S = EditUI.draft; if (!S) return;
@@ -1083,7 +1171,7 @@ function renderEdit(el) {
         h('button', { class: 'btn', onclick: function () { createShort('plan'); } }, '＋ 企画'))));
     return;
   }
-  if (!EditUI.draft || EditUI.draft.id !== s.id) { editSaveNow(); EditUI.curT = 0; EditUI.draft = JSON.parse(JSON.stringify(s)); }
+  if (!EditUI.draft || EditUI.draft.id !== s.id) { editSaveNow(); EditUI.curT = 0; EditUI.draft = JSON.parse(JSON.stringify(s)); EditUI.lastSig = blocksSig(EditUI.draft); }
   var S = EditUI.draft;
 
   var left = h('div', { class: 'sticky-col' });
@@ -1097,7 +1185,9 @@ function renderEdit(el) {
     id: 'box-cuts', key: 'cuts', title: 'カット', rowClass: 'cut-row', addId: 'add-cut-row', addLabel: '＋ 行を追加',
     badge: function () { return h('span', { class: 'count', id: 'cut-count', text: String(S.cuts.length) }); },
     sub: '「✂ カット＋」で今の秒数を記録', emptyHint: '動画を見ながら、画面が切り替わるたびに「✂ カット＋」を押してください。',
-    cols: [{ key: 'type', label: '種類', ph: '例：寄り', list: 'cut-types' }, { key: 'memo', label: 'カットのメモ', ph: '何が変わったか・ねらい' }],
+    cols: [{ key: 'block', label: '構成', empty: '構成—', options: function () { return [''].concat(App.state.blockTypes.map(function (b) { return b.name; })); },
+        color: blockSelectStyle, onchange: function (r, v) { setBlockAt(Number(r.t) || 0, v, 'cut'); } },
+      { key: 'type', label: '種類', ph: '例：寄り', list: 'cut-types' }, { key: 'memo', label: 'カットのメモ', ph: '何が変わったか・ねらい' }],
     lists: [datalist('cut-types', CUT_TYPES)],
     rowExtra: function (r) {
       var sh = shotNear(Number(r.t) || 0);
@@ -1206,7 +1296,16 @@ function mountPlayer(frame, p) {
         videoId: p.id, width: '100%', height: '100%',
         playerVars: { playsinline: 1, rel: 0, loop: 1, playlist: p.id, modestbranding: 1, origin: location.origin },
         events: {
-          onReady: function () { var st = document.getElementById('player-state'); if (st) st.textContent = '再生中の秒数が「今の秒数」に自動で入ります'; },
+          onReady: function () {
+            var st = document.getElementById('player-state'); if (st) st.textContent = '再生中の秒数が「今の秒数」に自動で入ります';
+            var S = EditUI.draft, d = 0;
+            try { d = Player.yt.getDuration(); } catch (e) { /* noop */ }
+            if (S && !(Number(S.duration) > 0) && d > 0) {
+              S.duration = Math.round(d * 10) / 10;
+              var fd = document.getElementById('f-duration'); if (fd) fd.value = S.duration;
+              editScheduleSave();
+            }
+          },
           onError: function (e) {
             var st = document.getElementById('player-state');
             if (st) st.textContent = (e.data === 101 || e.data === 150) ? 'この動画は投稿者が埋め込み再生を許可していません。下のリンクから元のページで見てください' : '再生エラー（' + e.data + '）。下のリンクから元のページで見てください';
@@ -1326,6 +1425,12 @@ function shotsBox() {
             inp('number', sh.t, function (v) { sh.t = v; }, { class: 't s-t', step: '0.1', min: '0', style: { width: '70px', textAlign: 'right' } }),
             h('span', { class: 'hint', style: { margin: 0 }, text: '秒' }), h('span', { class: 'spacer' }),
             h('button', { class: 'btn small ghost del-shot', onclick: function () { if (confirm('このスクショを削除しますか？')) { S.shots.splice(i, 1); editScheduleSave(); draw(); } } }, '削除')),
+          h('div', { class: 'shot-blocks' }, App.state.blockTypes.map(function (bt) {
+            var on = sh.block === bt.name;
+            return h('button', { class: 'chip' + (on ? ' on' : ''), 'data-type': bt.name, title: 'このスクショからを「' + bt.name + '」にする',
+              style: on ? { background: bt.color, borderColor: bt.color, color: '#fff' } : { borderColor: bt.color, color: bt.color },
+              onclick: function () { setBlockAt(Number(sh.t) || 0, on ? '' : bt.name, 'shot'); draw(); } }, bt.name);
+          })),
           notes,
           h('button', { class: 'btn small add-note', onclick: function () { sh.notes.push({ label: NOTE_LABELS[sh.notes.length % NOTE_LABELS.length], body: '' }); editScheduleSave(); draw(); } }, '＋ メモ'))));
     });

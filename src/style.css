@@ -174,6 +174,17 @@ body.player-big #toasts { display: none; }
 .owned-no { color: var(--danger); font-weight: 700; }
 .owned-yes { color: var(--ok); font-weight: 700; }
 
+/* 構成ラベル */
+.shot-blocks { display: flex; flex-wrap: wrap; gap: 4px; }
+.chip { border: 1.5px solid; background: #fff; border-radius: 99px; padding: 2px 9px; font-size: 12px; font-weight: 700; cursor: pointer; }
+.chip.on { box-shadow: 0 2px 6px rgba(0,0,0,.15); }
+.auto-row { display: flex; flex-wrap: wrap; gap: 6px 12px; align-items: center; margin-top: 10px; }
+.auto-toggle { display: inline-flex; gap: 6px; align-items: center; font-weight: 700; font-size: 13px; cursor: pointer; }
+.auto-toggle input { accent-color: var(--accent-deep); }
+.manual-add { margin-top: 10px; }
+.manual-add > summary { cursor: pointer; font-size: 12.5px; color: var(--ink2); margin-bottom: 8px; }
+select.r-block { min-width: 86px; }
+
 /* ---- templates ---- */
 .tpl { background: var(--card); border: 1px solid #fff; box-shadow: 0 4px 14px rgba(90,140,200,.09); border-radius: var(--radius); padding: 14px; margin-bottom: 12px; }
 .tpl .head { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
