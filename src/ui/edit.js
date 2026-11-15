@@ -238,7 +238,9 @@ function infoBox() {
     field('タイトル', inp('text', S.title, function (v) { S.title = v; }, { id: 'f-title', placeholder: '動画タイトル' })),
     field('URL', inp('url', S.url, function (v) { S.url = v; }, { id: 'f-url', placeholder: 'https://youtube.com/shorts/...', onchange: function () {
       var old = document.querySelector('.player-box'); if (old) old.replaceWith(playerBox());
+      fetchThumb(true);
     } })),
+    thumbField(),
     h('div', { class: 'fields2' },
       field('チャンネル', inp('text', S.channel, function (v) { S.channel = v; }, { id: 'f-channel' })),
       field('尺（秒）', inp('number', S.duration || '', function (v) { S.duration = v; }, { id: 'f-duration', min: '0', step: '0.1' }))),
@@ -267,12 +269,87 @@ function infoBox() {
       } }, '削除')));
 }
 
+// ---- サムネ ----
+function thumbSrc(s) { return s.thumb || s.thumbUrl || ''; }
+
+function setThumbView() {
+  var S = EditUI.draft, img = document.getElementById('thumb-img'), ph = document.getElementById('thumb-ph');
+  if (!img || !S) return;
+  var src = thumbSrc(S);
+  img.classList.toggle('hidden', !src); if (src) img.src = src;
+  if (ph) ph.classList.toggle('hidden', !!src);
+}
+
+function thumbField() {
+  var fileIn = h('input', { type: 'file', accept: 'image/*', hidden: true, onchange: function () {
+    var f = fileIn.files[0]; if (!f) return;
+    imageFileToJpeg(f).then(function (img) { EditUI.draft.thumb = img; editScheduleSave(); setThumbView(); toast('サムネを保存しました'); })
+      .catch(function (e) { toast(e.message, true); });
+    fileIn.value = '';
+  } });
+  var S = EditUI.draft;
+  setTimeout(function () { setThumbView(); if (S.url && !thumbSrc(S)) fetchThumb(false); }, 0);
+  return h('div', { class: 'field' }, h('label', { text: 'サムネ' }),
+    h('div', { class: 'thumb-field' },
+      h('img', { id: 'thumb-img', class: 'hidden', alt: 'サムネ', onclick: function () { if (thumbSrc(EditUI.draft)) showOverlay(thumbSrc(EditUI.draft)); },
+        onerror: function () { nextThumbCandidate(); } }),
+      h('div', { id: 'thumb-ph', class: 'thumb-ph', text: 'なし' }),
+      h('div', { class: 'thumb-actions' },
+        h('button', { class: 'btn small', id: 'thumb-change', onclick: function () { fileIn.click(); } }, '🖼 画像を選ぶ'),
+        h('span', { class: 'hint', style: { margin: 0 }, text: 'YouTubeはURLから自動で入ります' }), fileIn)));
+}
+
+// YouTube のサムネを自動で取得（縦長→横長の順に試す）。画像として保存できない時はURLだけ持つ
+function fetchThumb(force) {
+  var S = EditUI.draft; if (!S) return;
+  var p = playerUrl(S.url);
+  if (!p || p.site !== 'youtube') return;
+  if (!force && thumbSrc(S)) return;
+  if (force) S.thumb = '';
+  S.thumbCands = ytThumbCandidates(p.id);
+  S.thumbUrl = S.thumbCands[0];
+  editScheduleSave(); setThumbView();
+  tryEmbedThumb(S, S.thumbUrl);
+}
+
+function nextThumbCandidate() {
+  var S = EditUI.draft; if (!S || S.thumb || !S.thumbCands) return;
+  var i = S.thumbCands.indexOf(S.thumbUrl);
+  if (i >= 0 && i + 1 < S.thumbCands.length) { S.thumbUrl = S.thumbCands[i + 1]; editScheduleSave(); setThumbView(); tryEmbedThumb(S, S.thumbUrl); }
+  else { var img = document.getElementById('thumb-img'), ph = document.getElementById('thumb-ph'); if (img) img.classList.add('hidden'); if (ph) ph.classList.remove('hidden'); }
+}
+
+function tryEmbedThumb(S, url) {
+  var img = new Image();
+  img.crossOrigin = 'anonymous';
+  img.onload = function () {
+    if (img.naturalWidth <= 120) return; // 「画像なし」の小さいダミー
+    try {
+      var data = toJpeg(img, 0, 0, img.naturalWidth, img.naturalHeight);
+      if (EditUI.draft === S && S.thumbUrl === url) { S.thumb = data; editScheduleSave(); setThumbView(); }
+    } catch (e) { /* CORS で保存できない時はURLのまま */ }
+  };
+  img.src = url;
+}
+
 function timeBar() {
   function setT(v) { setCurT(v, false); }
   var ti = h('input', { type: 'number', id: 'cur-t', step: '0.1', min: '0', value: EditUI.curT, oninput: function (e) { EditUI.curT = Number(e.target.value) || 0; },
     onchange: function (e) { setCurT(Number(e.target.value) || 0, false); } });
   function nudge(d) { return h('button', { class: 'btn small' + (Math.abs(d) === 1 ? ' wide-only' : ''), onclick: function () { setT((Number(EditUI.curT) || 0) + d); } }, (d > 0 ? '+' : '') + d); }
-  return h('div', { class: 'timebar' },
+  var playBtn = h('button', { class: 'btn small play-toggle', id: 'play-toggle', title: '再生／一時停止', onclick: function () {
+    var y = Player.yt; if (!y || !y.getPlayerState) { toast('動画が読み込まれていません', true); return; }
+    try { if (y.getPlayerState() === 1) y.pauseVideo(); else y.playVideo(); } catch (e) { /* noop */ }
+    setTimeout(refreshPlayToggle, 150);
+  } }, '▶');
+  var speed = h('select', { id: 'speed', class: 'speed', title: '再生速度（スロー再生）', onchange: function (e) {
+    Player.userRate = Number(e.target.value) || 1;
+    var y = Player.yt;
+    if (y && y.setPlaybackRate && !Player.pauseTimer) { try { y.setPlaybackRate(Player.userRate); } catch (x) { /* noop */ } }
+  } }, [['0.25', '×0.25'], ['0.5', '×0.5'], ['0.75', '×0.75'], ['1', '×1']].map(function (o) {
+    return h('option', { value: o[0], text: o[1], selected: Number(o[0]) === (Player.userRate || 1) });
+  }));
+  return h('div', { class: 'timebar' }, playBtn, speed,
     h('span', { class: 'lbl wide-only', text: '今の秒数' }), ti, h('span', { class: 'lbl', text: '秒' }),
     nudge(-1), nudge(-0.5), nudge(0.5), nudge(1),
     h('span', { class: 'spacer' }),
@@ -296,18 +373,13 @@ function timeBar() {
         return;
       }
       // 初回：このクリックで画面共有を開始してから、拡大して撮る
-      var y = Player.yt;
-      if (App.state.prefs.cutPause !== false && y && y.getPlayerState && y.getPlayerState() === 1 && y.pauseVideo) { try { y.pauseVideo(); } catch (e) { /* noop */ } Player.resumeAfter = true; }
       toast('共有の確認で「このタブ」を選んでください。以降はカットを押すだけで撮れます');
       startShare().then(function () {
         Capture.wasSharing = true; refreshShareUI();
-        var resume = Player.resumeAfter;
         var big2 = pauseForCut();
-        Player.resumeAfter = Player.resumeAfter || resume;
         setTimeout(function () { captureShotAt(t).then(function () { redrawCuts(); }); }, big2 ? 600 : 0);
       }).catch(function (e) {
         refreshShareUI();
-        if (Player.resumeAfter && Player.yt) { try { Player.yt.playVideo(); } catch (x) { /* noop */ } Player.resumeAfter = false; }
         if (!e || e.name !== 'NotAllowedError') toast('画面共有を開始できませんでした: ' + (e && e.message), true);
         else toast('画面共有が許可されなかったので、スクショは撮っていません（カットは記録しました）', true);
       });
@@ -337,18 +409,38 @@ function pauseForCut() {
   if (!frame) return false;
   var y = Player.yt;
   var playing = !!(y && y.getPlayerState && y.getPlayerState() === 1);
-  var resume = playing || (Player.pauseTimer && Player.resumeAfter);
-  if (playing && y.pauseVideo) y.pauseVideo();
+  var holding = !!Player.pauseTimer;
+  if (playing && !holding) {
+    if (y.setPlaybackRate) {
+      // 一時停止すると YouTube の停止ボタン等が画面に出るので、超スローにして「止まって見える」状態にする
+      Player.holdMode = 'slow';
+      try { Player.holdFrom = y.getCurrentTime(); } catch (e) { Player.holdFrom = null; }
+      y.setPlaybackRate(0.25);
+    } else {
+      Player.holdMode = 'pause';
+      y.pauseVideo();
+    }
+    Player.resumeAfter = true;
+  } else if (!holding) {
+    Player.holdMode = null;
+    Player.resumeAfter = false;
+  }
   frame.classList.add('big');
   document.body.classList.add('player-big');
   clearTimeout(Player.pauseTimer);
-  Player.resumeAfter = resume;
   Player.pauseTimer = setTimeout(function () {
     Player.pauseTimer = null;
     frame.classList.remove('big');
     document.body.classList.remove('player-big');
-    if (Player.resumeAfter && Player.yt === y && y) { try { y.playVideo(); } catch (e) { /* noop */ } }
-    Player.resumeAfter = false;
+    if (Player.resumeAfter && y && Player.yt === y) {
+      try {
+        if (Player.holdMode === 'slow') {
+          if (Player.holdFrom != null) y.seekTo(Player.holdFrom, true);
+          y.setPlaybackRate(Player.userRate || 1);
+        } else y.playVideo();
+      } catch (e) { /* noop */ }
+    }
+    Player.resumeAfter = false; Player.holdMode = null;
   }, CUT_HOLD_MS);
   return true;
 }
@@ -547,6 +639,13 @@ function destroyPlayer() {
   Player.yt = null; Player.site = null;
 }
 
+function refreshPlayToggle() {
+  var b = document.getElementById('play-toggle'); if (!b) return;
+  var playing = false;
+  try { playing = Player.yt && Player.yt.getPlayerState && Player.yt.getPlayerState() === 1; } catch (e) { /* noop */ }
+  b.textContent = playing ? '⏸' : '▶';
+}
+
 function setCurT(v, fromPlayer) {
   EditUI.curT = Math.max(0, Math.round(v * 10) / 10);
   var ti = document.getElementById('cur-t');
@@ -564,10 +663,12 @@ function mountPlayer(frame, p) {
       if (!document.body.contains(holder)) return;
       Player.yt = new YT.Player(holder, {
         videoId: p.id, width: '100%', height: '100%',
-        playerVars: { playsinline: 1, rel: 0, loop: 1, playlist: p.id, modestbranding: 1, origin: location.origin },
+        // controls:0 → 再生・停止・前へ/次へなどのボタンを出さない（スクショの邪魔になるため）。ループは自前で行う
+        playerVars: { playsinline: 1, rel: 0, controls: 0, fs: 0, iv_load_policy: 3, disablekb: 1, modestbranding: 1, origin: location.origin },
         events: {
           onReady: function () {
             var st = document.getElementById('player-state'); if (st) st.textContent = '再生中の秒数が「今の秒数」に自動で入ります';
+            if (Player.userRate && Player.userRate !== 1) { try { Player.yt.setPlaybackRate(Player.userRate); } catch (x) { /* noop */ } }
             var S = EditUI.draft, d = 0;
             try { d = Player.yt.getDuration(); } catch (e) { /* noop */ }
             if (S && !(Number(S.duration) > 0) && d > 0) {
@@ -575,6 +676,10 @@ function mountPlayer(frame, p) {
               var fd = document.getElementById('f-duration'); if (fd) fd.value = S.duration;
               editScheduleSave();
             }
+          },
+          onStateChange: function (e) {
+            if (e.data === 0 && Player.yt) { try { Player.yt.seekTo(0, true); Player.yt.playVideo(); } catch (x) { /* noop */ } }
+            refreshPlayToggle();
           },
           onError: function (e) {
             var st = document.getElementById('player-state');

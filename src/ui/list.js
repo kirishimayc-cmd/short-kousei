@@ -46,10 +46,10 @@ function renderList(el) {
     if (!arr.length) { cardsWrap.appendChild(h('div', { class: 'empty', text: '条件に合うショートがありません' })); return; }
     var grid = h('div', { class: 'cards' });
     arr.forEach(function (s) {
-      var shot = (s.shots || [])[0];
+      var shot = (s.thumb || s.thumbUrl) ? { img: s.thumb || s.thumbUrl } : (s.shots || [])[0];
       var m = metrics(s);
       grid.appendChild(h('div', { class: 'card', onclick: function () { App.go('edit', s.id); } },
-        h('div', { class: 'thumb', style: shot ? { backgroundImage: 'url(' + shot.img + ')' } : null }, shot ? '' : '▶'),
+        h('div', { class: 'thumb', style: shot ? { backgroundImage: 'url("' + String(shot.img).replace(/["\\]/g, '') + '")' } : null }, shot ? '' : '▶'),
         h('div', { class: 'body' },
           h('div', { class: 'row', style: { gap: '6px' } }, h('span', { class: 'badge ' + s.kind, text: KIND_LABELS[s.kind] }),
             s.channel ? h('span', { class: 'hint', style: { margin: 0 }, text: s.channel }) : null),

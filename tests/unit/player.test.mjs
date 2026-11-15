@@ -25,3 +25,10 @@ test('other http urls pass through, bad schemes rejected', () => {
   assert.equal(M.playerUrl('javascript:alert(1)'), null);
   assert.equal(M.playerUrl(''), null);
 });
+
+test('youtube thumbnail candidates (vertical first)', () => {
+  assert.deepEqual(M.ytThumbCandidates('abcDEF12_-x'), [
+    'https://i.ytimg.com/vi/abcDEF12_-x/oar2.jpg',
+    'https://i.ytimg.com/vi/abcDEF12_-x/hq720.jpg',
+    'https://i.ytimg.com/vi/abcDEF12_-x/hqdefault.jpg']);
+});

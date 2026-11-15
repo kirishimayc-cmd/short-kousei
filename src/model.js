@@ -106,6 +106,10 @@ function buildBlocks(marks, duration, oldBlocks) {
   });
 }
 
+function ytThumbCandidates(id) {
+  return ['oar2', 'hq720', 'hqdefault'].map(function (n) { return 'https://i.ytimg.com/vi/' + id + '/' + n + '.jpg'; });
+}
+
 // 動画URL → アプリに取られにくい埋め込み専用の再生URL
 function playerUrl(raw) {
   var u = String(raw || '').trim();
@@ -124,7 +128,7 @@ function playerUrl(raw) {
   return { site: 'other', url: u };
 }
 
-if (typeof module !== 'undefined') module.exports = { playerUrl: playerUrl, marksOf: marksOf, buildBlocks: buildBlocks,
+if (typeof module !== 'undefined') module.exports = { playerUrl: playerUrl, ytThumbCandidates: ytThumbCandidates, marksOf: marksOf, buildBlocks: buildBlocks,
   DEFAULT_BLOCK_TYPES: DEFAULT_BLOCK_TYPES, KIND_LABELS: KIND_LABELS, uid: uid, num: num,
   newShort: newShort, normalizeShort: normalizeShort,
   templateFromShort: templateFromShort, shortFromTemplate: shortFromTemplate

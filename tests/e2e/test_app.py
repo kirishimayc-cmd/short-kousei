@@ -625,3 +625,77 @@ def test_auto_blocks_off_keeps_manual(page):
     page.uncheck('#auto-blocks')
     page.locator('.cut-row .r-block').nth(0).select_option('フック')
     assert _blocks(page) == [['展開', 0, 30]]
+
+
+# ---------- プレーヤーの操作ボタンを出さない・サムネ保存 ----------
+FAKE_YT = """() => {
+  window.__yt = { log: [], opts: null, state: 1, rate: 1, t: 5 };
+  window.YT = { Player: function (el, opts) {
+    __yt.opts = opts; const self = this;
+    this.getPlayerState = () => __yt.state; this.getCurrentTime = () => __yt.t; this.getDuration = () => 30;
+    this.pauseVideo = () => { __yt.log.push('pause'); __yt.state = 2; };
+    this.playVideo = () => { __yt.log.push('play'); __yt.state = 1; };
+    this.seekTo = (t) => __yt.log.push('seek:' + t);
+    this.setPlaybackRate = (r) => { __yt.log.push('rate:' + r); __yt.rate = r; };
+    this.getPlaybackRate = () => __yt.rate;
+    this.destroy = () => {};
+    setTimeout(() => opts.events && opts.events.onReady && opts.events.onReady({ target: self }), 0);
+  } };
+}"""
+
+
+def _open_with_fake_yt(page, **f):
+    page.evaluate(FAKE_YT)
+    sid = open_new(page, url='https://youtu.be/abcDEF12_-x', **f)
+    page.wait_for_function('window.__yt.opts')
+    return sid
+
+
+def test_player_hides_youtube_buttons(page):
+    _open_with_fake_yt(page, duration=30)
+    pv = page.evaluate('__yt.opts.playerVars')
+    assert pv['controls'] == 0
+    assert 'playlist' not in pv and 'loop' not in pv   # 前へ・次へボタンの原因
+    page.click('#play-toggle')
+    assert page.evaluate('__yt.log') == ['pause']
+
+
+def test_cut_hold_uses_slow_motion_not_pause(page):
+    _open_with_fake_yt(page, duration=30)
+    page.uncheck('#cut-shot')
+    page.click('#add-cut')
+    assert page.evaluate('__yt.log') == ['rate:0.25']
+    page.wait_for_timeout(3300)
+    assert page.evaluate('__yt.log') == ['rate:0.25', 'seek:5', 'rate:1']
+
+
+def test_manual_thumbnail(page, tmp_path):
+    f = tmp_path / 't.png'; f.write_bytes(PNG)
+    open_new(page, title='サムネ付き')
+    with page.expect_file_chooser() as fc:
+        page.click('#thumb-change')
+    fc.value.set_files(str(f))
+    page.wait_for_selector('#thumb-img[src^="data:image"]')
+    page.wait_for_timeout(700)
+    page.click('nav [data-tab=list]')
+    bg = page.evaluate("getComputedStyle(document.querySelector('#tab-list .card .thumb')).backgroundImage")
+    assert 'data:image' in bg
+
+
+def test_youtube_thumb_url_saved(page):
+    sid = open_new(page)
+    page.fill('#f-url', 'https://www.youtube.com/shorts/abcDEF12_-x')
+    page.dispatch_event('#f-url', 'change')
+    page.wait_for_timeout(1500)
+    # ネットが無い環境では候補を順に試すので、どれかの候補になっていればOK
+    assert page.evaluate(f"App.find('{sid}').thumbUrl").startswith('https://i.ytimg.com/vi/abcDEF12_-x/')
+
+
+def test_slow_playback_speed(page):
+    _open_with_fake_yt(page, duration=30)
+    page.uncheck('#cut-shot')
+    page.select_option('#speed', '0.5')
+    assert page.evaluate('__yt.log') == ['rate:0.5']
+    page.click('#add-cut')
+    page.wait_for_timeout(3300)
+    assert page.evaluate('__yt.log') == ['rate:0.5', 'rate:0.25', 'seek:5', 'rate:0.5']
