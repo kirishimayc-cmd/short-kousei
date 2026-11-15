@@ -12,12 +12,30 @@ function openDB() {
         if (!db.objectStoreNames.contains(n)) db.createObjectStore(n, { keyPath: 'id' });
       });
     };
-    r.onsuccess = function () { _db = r.result; res(_db); };
+    r.onsuccess = function () {
+      var db = r.result;
+      // iPhone はアプリ切り替え等で接続を閉じることがある → 次回開き直す
+      db.onclose = function () { if (_db === db) _db = null; };
+      db.onversionchange = function () { db.close(); if (_db === db) _db = null; };
+      _db = db; res(db);
+    };
     r.onerror = function () { rej(r.error); };
   });
 }
 
-function _tx(store, mode, fn) {
+function _tx(store, mode, fn, retried) {
+  return _txOnce(store, mode, fn).catch(function (e) {
+    // 接続が閉じていた（InvalidStateError 等）なら、開き直して1回だけやり直す
+    if (!retried && e && (e.name === 'InvalidStateError' || e.name === 'TransactionInactiveError' || e.name === 'UnknownError')) {
+      try { if (_db) _db.close(); } catch (x) { /* noop */ }
+      _db = null;
+      return _tx(store, mode, fn, true);
+    }
+    throw e;
+  });
+}
+
+function _txOnce(store, mode, fn) {
   return openDB().then(function (db) {
     return new Promise(function (res, rej) {
       var t = db.transaction(store, mode);
@@ -42,4 +60,10 @@ function clearAll() {
       t.onerror = function () { rej(t.error); };
     });
   });
+}
+
+// ブラウザに「消さないで」とお願いする（iPhone で勝手に消されにくくする）
+function requestPersist() {
+  try { if (navigator.storage && navigator.storage.persist) return navigator.storage.persist().catch(function () { return false; }); } catch (e) { /* noop */ }
+  return Promise.resolve(false);
 }

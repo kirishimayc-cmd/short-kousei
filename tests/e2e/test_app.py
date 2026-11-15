@@ -540,3 +540,22 @@ def test_big_mode_fits_whole_video(browser):
         assert abs(w / h - 9 / 16) < 0.01, (vw, vh, r)
         assert max(w / vw, h / vh) > 0.9, (vw, vh, r)   # ちゃんと大きい
         ctx.close()
+
+
+# ---------- iPhone: DB接続が切れても保存できる ----------
+def test_save_survives_closed_db_connection(page):
+    sid = open_new(page)
+    page.evaluate("() => { _db.close(); }")   # iOSがバックグラウンドで接続を閉じた状態
+    page.fill('#f-title', '切断後の保存')
+    page.wait_for_timeout(900)
+    assert page.locator('.toast.error').count() == 0
+    reopen(page, sid)
+    assert page.input_value('#f-title') == '切断後の保存'
+
+
+def test_same_error_toast_not_stacked(page):
+    open_new(page)
+    page.evaluate("() => { window.put = () => Promise.reject(Object.assign(new Error('x'), {name:'QuotaExceededError'})); }")
+    for ch in 'abc':
+        page.fill('#f-title', ch); page.wait_for_timeout(600)
+    assert page.locator('.toast.error').count() == 1

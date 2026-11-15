@@ -22,6 +22,9 @@ function h(tag, attrs) {
 }
 
 function toast(msg, isError) {
+  // 同じメッセージが表示中なら重ねない
+  var dup = Array.prototype.filter.call(document.querySelectorAll('#toasts .toast'), function (x) { return x.textContent === msg && !x.classList.contains('out'); })[0];
+  if (dup) return;
   var t = h('div', { class: 'toast' + (isError ? ' error' : ''), text: msg });
   document.getElementById('toasts').appendChild(t);
   setTimeout(function () { t.classList.add('out'); }, isError ? 5000 : 2200);
@@ -43,6 +46,7 @@ var App = {
       b.addEventListener('click', function () { self.go(b.dataset.tab); });
     });
     this.initSettings();
+    requestPersist();
     return this.load().then(function () { self.go('list'); self.ready = true; })
       .catch(function (e) { toast('データを開けませんでした: ' + e.message, true); });
   },
@@ -73,7 +77,9 @@ var App = {
     var arr = this.state.shorts, i = arr.findIndex(function (x) { return x.id === n.id; });
     if (i >= 0) arr[i] = n; else arr.push(n);
     return put('shorts', n).then(function () { return n; }, function (e) {
-      toast('保存できませんでした（' + (e && (e.name || e.message)) + '）。容量不足の場合はスクショを減らすか、バックアップを書き出してください', true);
+      toast(e && e.name === 'QuotaExceededError'
+        ? '保存できませんでした（容量がいっぱいです）。スクショを減らすか、バックアップを書き出してください'
+        : '保存できませんでした（' + (e && (e.name || e.message)) + '）。ページを再読み込みしてから、もう一度試してください', true);
       throw e;
     });
   },
